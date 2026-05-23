@@ -1,0 +1,19 @@
+# Python / Backend
+backend/venv/
+backend/__pycache__/
+backend/.env
+backend/qdrant_db/
+backend/*.pdf
+backend/fake.pdf
+backend/temp_*
+
+# Node / Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.env*.local
+
+# OS
+.DS_Store
+Thumbs.db

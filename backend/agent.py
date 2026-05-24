@@ -226,6 +226,7 @@ pool = ConnectionPool(
     conninfo=DATABASE_URL, 
     max_idle=30,
     max_lifetime=300,
+    min_size=0,
     kwargs={
         "autocommit": True,
         "prepare_threshold": None
@@ -235,6 +236,9 @@ pool = ConnectionPool(
 # Add Postgres Memory!
 memory = PostgresSaver(pool)
 # setup() automatically creates the required tables in Supabase if they don't exist
-memory.setup() 
+try:
+    memory.setup() 
+except Exception as e:
+    print(f"Warning: Could not setup PostgresSaver tables. Database might be unreachable: {e}")
 
 interview_bot = workflow.compile(checkpointer=memory)

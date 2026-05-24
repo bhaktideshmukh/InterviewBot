@@ -26,6 +26,7 @@ class ChatRequest(BaseModel):
     message: str
     stage: str = "greeting" # We default to greeting stage
     thread_id: str = "test_user_1" # In the future, this will be the User ID
+    interview_type: str = "dsa"
 
 @app.get("/")
 def read_root():
@@ -39,7 +40,8 @@ def chat(request: ChatRequest):
         
         # We ONLY pass the user's message. We let the agent.py state handle the 'stage'
         input_state = {
-            "messages": [HumanMessage(content=request.message)]
+            "messages": [HumanMessage(content=request.message)],
+            "interview_type": request.interview_type
         }
         
         # Run the graph

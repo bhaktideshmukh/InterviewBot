@@ -37,6 +37,7 @@ class InterviewResponse(BaseModel):
 class InterviewState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     stage: str # Notice there is no 'add' reducer here, so it will get overwritten!
+    interview_type: str
 
 # Initialize our Gemini Model
 llm = ChatGoogleGenerativeAI(
@@ -50,12 +51,22 @@ structured_llm = llm.with_structured_output(InterviewResponse)
 # --- 3. THE NODE ---
 def interviewer_node(state: InterviewState):
     current_stage = state.get("stage", "greeting")
+    interview_type = state.get("interview_type", "dsa")
     resume_context = get_resume_context()
     
     if current_stage == "greeting":
-        system_prompt = "You are an expert AI interviewer. Briefly greet the candidate. Tell them you have read their resume and ask them a specific question about one of their past experiences."
+        system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate, tell them you have read their resume, and ask if they are ready to begin the {interview_type} round."
     elif current_stage == "technical":
-        system_prompt = "You are a strict technical interviewer. Ask a technical question related to the candidate's skills. If they answer it, evaluate it and change the next_stage to 'feedback'."
+        if interview_type == "dsa":
+            system_prompt = "You are a strict technical interviewer. Ask a Data Structures and Algorithms question. DO NOT USE ANY MARKDOWN formatting like **, ##, or ###. Just use plain text with CAPITALIZED HEADINGS and DOUBLE NEWLINES (\\n\\n) between every single section. The sections must be: PROBLEM STATEMENT, EXAMPLE INPUTS & OUTPUTS, EXPLANATION, and CONSTRAINTS. End by asking for their approach and the Time/Space Complexity on a new line. Do not transition to the 'feedback' stage until they have correctly answered the complexity."
+        elif interview_type == "system_design":
+            system_prompt = "You are a senior system design interviewer. Ask them to design a scalable system (e.g., Twitter, URL shortener). Discuss trade-offs, database choices, and scalability bottlenecks. Once thoroughly discussed, transition to 'feedback'."
+        elif interview_type == "hr":
+            system_prompt = "You are an HR behavioral interviewer. Ask behavioral questions expecting the STAR method (Situation, Task, Action, Result). Evaluate their soft skills and leadership qualities. Once answered, transition to 'feedback'."
+        elif interview_type == "oops":
+            system_prompt = "You are a technical interviewer focusing on Object-Oriented Programming. Ask them to design classes for a system (e.g., Parking Lot, Elevator) focusing on Encapsulation, Inheritance, and Polymorphism. Once discussed, transition to 'feedback'."
+        else:
+            system_prompt = "You are an expert interviewer. Ask a relevant question."
     elif current_stage == "feedback":
         system_prompt = "The interview is over. Give the candidate a final score out of 10 and a brief feedback summary of how they did."
     else:

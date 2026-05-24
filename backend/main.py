@@ -1,5 +1,8 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
+import subprocess
+import tempfile
+import sys
 from langchain_core.messages import HumanMessage
 from agent import interview_bot
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +33,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the AI Interview Bot API"}
+    return {"message": "Welcome to the Bhakti Interview Bot API"}
 
 @app.post("/chat")
 def chat(request: ChatRequest):
@@ -53,10 +56,25 @@ def chat(request: ChatRequest):
         
         return {"reply": ai_response}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "429 RESOURCE_EXHAUSTED" in error_msg or "quota" in error_msg.lower():
+            if "GenerateRequestsPerDay" in error_msg:
+                friendly_msg = "API Quota Exceeded. You have reached your DAILY Gemini Free Tier limit (20 requests/day). Your quota will reset at midnight Pacific Time."
+            else:
+                import re
+                from datetime import datetime, timedelta
+                match = re.search(r"Please retry in (\d+\.?\d*)s", error_msg)
+                if match:
+                    seconds_to_wait = float(match.group(1))
+                    retry_time = datetime.now() + timedelta(seconds=seconds_to_wait)
+                    friendly_msg = f"API Quota Exceeded. You can use the AI again at {retry_time.strftime('%I:%M:%S %p')}."
+                else:
+                    friendly_msg = "API Quota Exceeded. You have reached your Gemini Free Tier limits. Please try again later."
+            raise HTTPException(status_code=429, detail=friendly_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/upload-resume")
-async def upload_resume(file: UploadFile = File(...)):
+async def upload_resume(file: UploadFile = File(...), user_id: str = Form(...)):
     try:
         temp_path = f"temp_{file.filename}"
         with open(temp_path, "wb") as buffer:
@@ -76,7 +94,7 @@ async def upload_resume(file: UploadFile = File(...)):
             splits,
             embeddings,
             path="./qdrant_db",
-            collection_name="resumes"
+            collection_name=f"resumes_{user_id}"
         )
         
         os.remove(temp_path)
@@ -85,3 +103,106 @@ async def upload_resume(file: UploadFile = File(...)):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+import psycopg
+from psycopg.rows import dict_row
+import os
+
+@app.get("/api/dashboard")
+def get_dashboard(user_id: str = None):
+    try:
+        with psycopg.connect(os.getenv("DATABASE_URL")) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                if user_id:
+                    cur.execute("SELECT * FROM interview_reports WHERE thread_id = %s ORDER BY created_at DESC", (user_id,))
+                else:
+                    cur.execute("SELECT * FROM interview_reports ORDER BY created_at DESC")
+                reports = cur.fetchall()
+                return {"reports": reports}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ExecuteRequest(BaseModel):
+    language: str
+    code: str
+    test_cases: str = ""
+
+@app.post("/api/execute")
+def execute_code(req: ExecuteRequest):
+    if req.language not in ["python", "javascript", "java", "cpp"]:
+        return {"output": "Error: Unsupported language."}
+    
+    try:
+        import tempfile, os, sys, subprocess
+        
+        if req.language == "python":
+            final_code = req.code
+            if req.test_cases.strip():
+                final_code += f"""\n
+import inspect
+target_func = None
+if 'Solution' in locals():
+    sol = Solution()
+    methods = [m for m in dir(sol) if not m.startswith('_')]
+    if methods: target_func = getattr(sol, methods[-1])
+else:
+    funcs = [obj for name, obj in locals().items() if inspect.isfunction(obj) and obj.__module__ == '__main__']
+    if funcs: target_func = funcs[-1]
+
+if target_func:
+    tests = '''{req.test_cases}'''
+    for line in tests.strip().split('\\n'):
+        if not line.strip(): continue
+        try:
+            args = eval(f"({{line.strip()}})")
+            if not isinstance(args, tuple): args = (args,)
+            res = target_func(*args)
+            print(f"Input: {{line}}\\nOutput: {{res}}\\n")
+        except Exception as e:
+            print(f"Input: {{line}}\\nError: {{e}}\\n")
+"""
+            with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as f:
+                f.write(final_code.encode("utf-8"))
+                temp_path = f.name
+            result = subprocess.run([sys.executable, temp_path], capture_output=True, text=True, timeout=5)
+            os.remove(temp_path)
+            return {"output": result.stdout + ("\nError:\n" + result.stderr if result.stderr else "")}
+            
+        elif req.language == "javascript":
+            with tempfile.NamedTemporaryFile(suffix=".js", delete=False) as f:
+                f.write(req.code.encode("utf-8"))
+                temp_path = f.name
+            result = subprocess.run(["node", temp_path], capture_output=True, text=True, timeout=5)
+            os.remove(temp_path)
+            return {"output": result.stdout + ("\nError:\n" + result.stderr if result.stderr else "")}
+            
+        elif req.language == "java":
+            final_code = req.code
+            if "class" not in final_code:
+                final_code = f"public class Main {{\n {req.code} \n public static void main(String[] args) {{ System.out.println(\"To test Java code without a main method, please write 'public static void main(String[] args)' or use Python.\"); }} \n}}"
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = os.path.join(temp_dir, "Main.java")
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    f.write(final_code)
+                compile_res = subprocess.run(["javac", "Main.java"], cwd=temp_dir, capture_output=True, text=True)
+                if compile_res.returncode != 0: return {"output": "Compilation Error:\n" + compile_res.stderr}
+                result = subprocess.run(["java", "Main"], cwd=temp_dir, capture_output=True, text=True, timeout=5)
+                return {"output": result.stdout + ("\nError:\n" + result.stderr if result.stderr else "")}
+                
+        elif req.language == "cpp":
+            final_code = req.code
+            if "int main" not in final_code:
+                final_code = f"#include <iostream>\nusing namespace std;\n{req.code}\n\nint main() {{\n    cout << \"[System] C++ Code compiled successfully!\\n\";\n    cout << \"Note: Because C++ is statically typed, it is impossible to dynamically parse raw text test cases into complex types (like vector<int>) without hand-writing a custom parser for your specific problem.\\n\";\n    cout << \"To run custom test cases in C++, please quickly add an 'int main()' function to manually instantiate and call your class.\\n\";\n    return 0;\n}}"
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = os.path.join(temp_dir, "main.cpp")
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    f.write(final_code)
+                compile_res = subprocess.run(["g++", "main.cpp", "-o", "main.exe"], cwd=temp_dir, capture_output=True, text=True)
+                if compile_res.returncode != 0: return {"output": "Compilation Error:\n" + compile_res.stderr}
+                result = subprocess.run([os.path.join(temp_dir, "main.exe")], cwd=temp_dir, capture_output=True, text=True, timeout=5)
+                return {"output": result.stdout + ("\nError:\n" + result.stderr if result.stderr else "")}
+                
+    except subprocess.TimeoutExpired:
+        return {"output": "Error: Execution timed out."}
+    except Exception as e:
+        return {"output": f"Execution failed: {str(e)}"}

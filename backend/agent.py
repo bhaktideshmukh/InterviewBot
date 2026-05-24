@@ -10,14 +10,14 @@ from qdrant_client import QdrantClient
 import os
 from dotenv import load_dotenv
 
-def get_resume_context():
+def get_resume_context(user_id: str):
     try:
         embeddings = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-2",
             google_api_key=os.getenv("GEMINI_API_KEY")
         )
         client = QdrantClient(path="./qdrant_db")
-        vector_store = QdrantVectorStore(client=client, collection_name="resumes", embedding=embeddings)
+        vector_store = QdrantVectorStore(client=client, collection_name=f"resumes_{user_id}", embedding=embeddings)
         docs = vector_store.similarity_search("skills experience projects", k=3)
         return "\n".join([d.page_content for d in docs])
     except Exception:
@@ -48,25 +48,109 @@ llm = ChatGoogleGenerativeAI(
 # Bind our Pydantic model to the LLM
 structured_llm = llm.with_structured_output(InterviewResponse)
 
+from langchain_core.runnables import RunnableConfig
+import psycopg
+
 # --- 3. THE NODE ---
-def interviewer_node(state: InterviewState):
+def interviewer_node(state: InterviewState, config: RunnableConfig):
     current_stage = state.get("stage", "greeting")
     interview_type = state.get("interview_type", "dsa")
-    resume_context = get_resume_context()
+    thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+    resume_context = get_resume_context(thread_id)
     
     if current_stage == "greeting":
         system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate, tell them you have read their resume, and ask if they are ready to begin the {interview_type} round."
     elif current_stage == "technical":
         if interview_type == "dsa":
-            system_prompt = "You are a strict technical interviewer. Ask a Data Structures and Algorithms question. DO NOT USE ANY MARKDOWN formatting like **, ##, or ###. Just use plain text with CAPITALIZED HEADINGS and DOUBLE NEWLINES (\\n\\n) between every single section. The sections must be: PROBLEM STATEMENT, EXAMPLE INPUTS & OUTPUTS, EXPLANATION, and CONSTRAINTS. End by asking for their approach and the Time/Space Complexity on a new line. Do not transition to the 'feedback' stage until they have correctly answered the complexity."
+            system_prompt = """You are a strict technical interviewer. You MUST ask a Data Structures and Algorithms question using exactly the following template. Do NOT use markdown (* or #). Use exactly these headings:
+
+PROBLEM STATEMENT
+[Problem description]
+
+EXAMPLE INPUTS & OUTPUTS
+[Examples]
+
+CONSTRAINTS
+[Constraints]
+
+Please share your approach and the Time/Space Complexity before writing code.
+
+Do not transition to the 'feedback' stage until they correctly answer the complexity."""
+        elif interview_type == "sql":
+            system_prompt = """You are a strict technical interviewer. You MUST ask an advanced SQL query question using exactly the following template. Do NOT use markdown (* or #). Use exactly these headings:
+
+PROBLEM STATEMENT
+[Problem description]
+
+TABLE SCHEMA
+[Tables and columns]
+
+EXAMPLE INPUT DATA
+[Example data]
+
+EXPECTED OUTPUT
+[Output data]
+
+Please share your SQL query approach.
+
+Do not transition to 'feedback' until they provide a working query."""
+        elif interview_type == "llsd":
+            system_prompt = """You are a strict technical interviewer focusing on Low Level System Design. Ask them to design a specific data structure (e.g., LRU Cache) exactly like LeetCode's 'Design' problems using this template. Do NOT use markdown (* or #):
+
+PROBLEM STATEMENT
+[Problem description]
+
+EXPECTED CLASS & METHODS
+[Methods to implement]
+
+EXAMPLE USAGE
+[Examples]
+
+CONSTRAINTS
+[Constraints]
+
+Please share your data structure choices and Time/Space Complexity for each method.
+
+Do not transition to 'feedback' until they provide the working class code."""
         elif interview_type == "system_design":
-            system_prompt = "You are a senior system design interviewer. Ask them to design a scalable system (e.g., Twitter, URL shortener). Discuss trade-offs, database choices, and scalability bottlenecks. Once thoroughly discussed, transition to 'feedback'."
+            system_prompt = """You are a senior system design interviewer. Ask them to design the high-level architecture for a scalable system using this template. Do NOT use markdown (* or #):
+
+PROBLEM STATEMENT
+[Problem description]
+
+FUNCTIONAL REQUIREMENTS
+[Requirements]
+
+NON-FUNCTIONAL REQUIREMENTS
+[Requirements]
+
+CAPACITY ESTIMATION
+[Estimations]
+
+Please describe your high-level architecture, database choices, and trade-offs.
+
+Once thoroughly discussed, transition to 'feedback'."""
         elif interview_type == "hr":
             system_prompt = "You are an HR behavioral interviewer. Ask behavioral questions expecting the STAR method (Situation, Task, Action, Result). Evaluate their soft skills and leadership qualities. Once answered, transition to 'feedback'."
         elif interview_type == "oops":
-            system_prompt = "You are a technical interviewer focusing on Object-Oriented Programming. Ask them to design classes for a system (e.g., Parking Lot, Elevator) focusing on Encapsulation, Inheritance, and Polymorphism. Once discussed, transition to 'feedback'."
+            system_prompt = """You are a technical interviewer focusing on Object-Oriented Programming. Ask them a theoretical OOP question using this template. Do NOT use markdown (* or #):
+
+PROBLEM STATEMENT
+[Problem description]
+
+EXPECTED CONCEPTS
+[Concepts to cover]
+
+CONSTRAINTS
+[Constraints]
+
+Please explain your understanding and approach.
+
+Do not transition to 'feedback' until they demonstrate solid understanding."""
         else:
             system_prompt = "You are an expert interviewer. Ask a relevant question."
+            
+        system_prompt += "\n\nCRITICAL ESCAPE HATCH: If the candidate says they don't know, want to give up, or explicitly ask for the answer, you MUST provide the full correct solution (Approach, Complexity, and Code). Immediately set your next_stage to 'feedback'."
     elif current_stage == "feedback":
         system_prompt = "The interview is over. Give the candidate a final score out of 10 and a brief feedback summary of how they did."
     else:
@@ -83,6 +167,32 @@ def interviewer_node(state: InterviewState):
     result = structured_llm.invoke(messages_to_send)
     
     print(f"--- [Backend] AI decided Next Stage should be: {result.next_stage} ---\n")
+
+    if result.next_stage == "feedback" and current_stage != "feedback":
+        # Generate feedback immediately without waiting for user to type 'ok'
+        print("--- [Backend] Auto-generating feedback... ---")
+        feedback_prompt = "The interview is over. Give the candidate a final score out of 10 and a brief feedback summary of how they did."
+        feedback_msgs = messages_to_send + [AIMessage(content=result.reply_message), SystemMessage(content=feedback_prompt)]
+        feedback_result = structured_llm.invoke(feedback_msgs)
+        
+        thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+        try:
+            with psycopg.connect(os.getenv("DATABASE_URL")) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO interview_reports (thread_id, interview_type, feedback_summary) VALUES (%s, %s, %s)",
+                        (thread_id, interview_type, feedback_result.reply_message)
+                    )
+                conn.commit()
+            print("--- [Backend] Feedback saved to Dashboard! ---")
+        except Exception as e:
+            print("--- [Backend] Failed to save feedback to Dashboard:", e)
+            
+        final_reply = result.reply_message + "\n\n---\n\n**Final Feedback & Score:**\n\n" + feedback_result.reply_message
+        return {
+            "messages": [AIMessage(content=final_reply)], 
+            "stage": "completed"
+        }
     
     # We convert the string reply back into an AIMessage
     ai_message = AIMessage(content=result.reply_message)

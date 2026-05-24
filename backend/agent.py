@@ -227,6 +227,7 @@ pool = ConnectionPool(
     max_idle=30,
     max_lifetime=300,
     min_size=0,
+    max_size=20,
     kwargs={
         "autocommit": True,
         "prepare_threshold": None

@@ -10,11 +10,11 @@ from qdrant_client import QdrantClient
 import os
 from dotenv import load_dotenv
 
-def get_resume_context(user_id: str):
+def get_resume_context(user_id: str, api_key: str = None):
     try:
         embeddings = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-2",
-            google_api_key=os.getenv("GEMINI_API_KEY")
+            google_api_key=api_key or os.getenv("GEMINI_API_KEY")
         )
         client = QdrantClient(path="./qdrant_db")
         vector_store = QdrantVectorStore(client=client, collection_name=f"resumes_{user_id}", embedding=embeddings)
@@ -38,15 +38,7 @@ class InterviewState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     stage: str # Notice there is no 'add' reducer here, so it will get overwritten!
     interview_type: str
-
-# Initialize our Gemini Model
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=os.getenv("GEMINI_API_KEY")
-)
-
-# Bind our Pydantic model to the LLM
-structured_llm = llm.with_structured_output(InterviewResponse)
+    api_key: str
 
 from langchain_core.runnables import RunnableConfig
 import psycopg
@@ -55,8 +47,15 @@ import psycopg
 def interviewer_node(state: InterviewState, config: RunnableConfig):
     current_stage = state.get("stage", "greeting")
     interview_type = state.get("interview_type", "dsa")
+    api_key = state.get("api_key") or os.getenv("GEMINI_API_KEY")
     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
-    resume_context = get_resume_context(thread_id)
+    resume_context = get_resume_context(thread_id, api_key)
+
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=api_key
+    )
+    structured_llm = llm.with_structured_output(InterviewResponse)
     
     if current_stage == "greeting":
         system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate, tell them you have read their resume, and ask if they are ready to begin the {interview_type} round."
@@ -150,7 +149,12 @@ Do not transition to 'feedback' until they demonstrate solid understanding."""
         else:
             system_prompt = "You are an expert interviewer. Ask a relevant question."
             
-        system_prompt += "\n\nCRITICAL ESCAPE HATCH: If the candidate says they don't know, want to give up, or explicitly ask for the answer, you MUST provide the full correct solution (Approach, Complexity, and Code). Immediately set your next_stage to 'feedback'."
+        if interview_type in ["dsa", "sql"]:
+            system_prompt += "\n\nCRITICAL ESCAPE HATCH: If the candidate says they don't know, want to give up, or explicitly ask for the answer, you MUST provide the full correct solution (Approach, Complexity, and Code). Immediately set your next_stage to 'feedback'."
+        elif interview_type == "hr":
+            system_prompt += "\n\nCRITICAL ESCAPE HATCH: If the candidate says they don't know, want to give up, or explicitly ask for the answer, you MUST provide an example of a great STAR method response. Immediately set your next_stage to 'feedback'."
+        else:
+            system_prompt += "\n\nCRITICAL ESCAPE HATCH: If the candidate says they don't know, want to give up, or explicitly ask for the answer, you MUST provide the full correct conceptual explanation and architecture/class design. Immediately set your next_stage to 'feedback'."
     elif current_stage == "feedback":
         system_prompt = "The interview is over. Give the candidate a final score out of 10 and a brief feedback summary of how they did."
     else:
@@ -171,8 +175,9 @@ Do not transition to 'feedback' until they demonstrate solid understanding."""
     if result.next_stage == "feedback" and current_stage != "feedback":
         # Generate feedback immediately without waiting for user to type 'ok'
         print("--- [Backend] Auto-generating feedback... ---")
-        feedback_prompt = "The interview is over. Give the candidate a final score out of 10 and a brief feedback summary of how they did."
-        feedback_msgs = messages_to_send + [AIMessage(content=result.reply_message), SystemMessage(content=feedback_prompt)]
+        from langchain_core.messages import HumanMessage
+        feedback_prompt = "SYSTEM OVERRIDE: The interview is now over. Please provide a detailed final evaluation of the candidate. You MUST include a final score out of 10, and a summary of their strengths and weaknesses based on this conversation."
+        feedback_msgs = messages_to_send + [AIMessage(content=result.reply_message), HumanMessage(content=feedback_prompt)]
         feedback_result = structured_llm.invoke(feedback_msgs)
         
         thread_id = config.get("configurable", {}).get("thread_id", "unknown")
@@ -216,10 +221,16 @@ from psycopg_pool import ConnectionPool
 DATABASE_URL = os.getenv("DATABASE_URL")
 # Enable autocommit for LangGraph index creation.
 # Set prepare_threshold=None to prevent "prepared statement already exists" errors when using Supabase Transaction Pooler!
-pool = ConnectionPool(conninfo=DATABASE_URL, kwargs={
-    "autocommit": True,
-    "prepare_threshold": None
-})
+# Set max_idle and max_lifetime to aggressively cycle connections so Supabase doesn't drop them unexpectedly.
+pool = ConnectionPool(
+    conninfo=DATABASE_URL, 
+    max_idle=30,
+    max_lifetime=300,
+    kwargs={
+        "autocommit": True,
+        "prepare_threshold": None
+    }
+)
 
 # Add Postgres Memory!
 memory = PostgresSaver(pool)

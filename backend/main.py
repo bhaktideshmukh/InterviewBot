@@ -35,8 +35,10 @@ class ChatRequest(BaseModel):
 def read_root():
     return {"message": "Welcome to the Bhakti Interview Bot API"}
 
+from fastapi import Header
+
 @app.post("/chat")
-def chat(request: ChatRequest):
+def chat(request: ChatRequest, x_gemini_key: str = Header(None)):
     try:
         # LangGraph requires a 'config' to know which memory thread to load
         config = {"configurable": {"thread_id": request.thread_id}}
@@ -44,7 +46,8 @@ def chat(request: ChatRequest):
         # We ONLY pass the user's message. We let the agent.py state handle the 'stage'
         input_state = {
             "messages": [HumanMessage(content=request.message)],
-            "interview_type": request.interview_type
+            "interview_type": request.interview_type,
+            "api_key": x_gemini_key
         }
         
         # Run the graph
@@ -74,7 +77,7 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/upload-resume")
-async def upload_resume(file: UploadFile = File(...), user_id: str = Form(...)):
+async def upload_resume(file: UploadFile = File(...), user_id: str = Form(...), x_gemini_key: str = Header(None)):
     try:
         temp_path = f"temp_{file.filename}"
         with open(temp_path, "wb") as buffer:
@@ -88,7 +91,7 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Form(...)):
         
         embeddings = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-2",
-            google_api_key=os.getenv("GEMINI_API_KEY")
+            google_api_key=x_gemini_key or os.getenv("GEMINI_API_KEY")
         )
         QdrantVectorStore.from_documents(
             splits,
@@ -114,7 +117,7 @@ def get_dashboard(user_id: str = None):
         with psycopg.connect(os.getenv("DATABASE_URL")) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 if user_id:
-                    cur.execute("SELECT * FROM interview_reports WHERE thread_id = %s ORDER BY created_at DESC", (user_id,))
+                    cur.execute("SELECT * FROM interview_reports WHERE thread_id LIKE %s ORDER BY created_at DESC", (f"{user_id}_%",))
                 else:
                     cur.execute("SELECT * FROM interview_reports ORDER BY created_at DESC")
                 reports = cur.fetchall()

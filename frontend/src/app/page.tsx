@@ -56,6 +56,11 @@ export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const activeThreadRef = useRef("");
+
+  useEffect(() => {
+    activeThreadRef.current = currentThreadId;
+  }, [currentThreadId]);
 
   // User initialization & Sessions Load
   useEffect(() => {
@@ -123,6 +128,10 @@ export default function Home() {
   const speakText = (text: string) => {
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
+    
+    // Do not speak the final feedback summary because it's too long
+    if (text.includes("Final Feedback & Score")) return;
+    
     const cleanText = text.replace(/[*#`_]/g, "");
     const utterance = new SpeechSynthesisUtterance(cleanText);
     window.speechSynthesis.speak(utterance);
@@ -139,12 +148,12 @@ export default function Home() {
     }
   }, [currentThreadId]);
 
-  // Save chat history
+  // Save chat history safely
   useEffect(() => {
-    if (currentThreadId && messages.length > 0) {
-      localStorage.setItem(currentThreadId, JSON.stringify(messages));
+    if (activeThreadRef.current && messages.length > 0) {
+      localStorage.setItem(activeThreadRef.current, JSON.stringify(messages));
     }
-  }, [messages, currentThreadId]);
+  }, [messages]);
 
   const startNewChat = (typeOverride?: string) => {
     const typeToUse = typeOverride || interviewType;
@@ -197,6 +206,11 @@ export default function Home() {
   const sendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
+
+    // Stop any ongoing speech when sending a new message
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
 
     // Add user message to UI immediately
     const userMessage: Message = { role: "user", content: input };

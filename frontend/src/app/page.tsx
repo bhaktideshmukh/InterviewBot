@@ -261,10 +261,10 @@ export default function Home() {
   };
 
   return (
-    <main className={styles.container} style={{ display: "flex", flexDirection: "row", height: "100vh" }}>
+    <main className={styles.mainLayout}>
       
       {/* Left Sidebar */}
-      <div style={{ width: "280px", background: "#111", borderRight: "1px solid #333", display: "flex", flexDirection: "column", padding: "16px", height: "100%", flexShrink: 0 }}>
+      <div className={styles.sidebar}>
         <button onClick={() => startNewChat()} style={{ background: "transparent", color: "white", border: "1px solid rgba(255,255,255,0.2)", padding: "12px", borderRadius: "8px", cursor: "pointer", fontWeight: "bold", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px", transition: "background 0.2s" }} onMouseEnter={e => e.currentTarget.style.background="rgba(255,255,255,0.1)"} onMouseLeave={e => e.currentTarget.style.background="transparent"}>
           <span style={{ fontSize: "18px" }}>+</span> New Chat
         </button>

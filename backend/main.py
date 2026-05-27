@@ -33,7 +33,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the Bhakti Interview Bot API"}
+    return {"message": "Welcome to the Interview Bot API"}
 
 from fastapi import Header
 

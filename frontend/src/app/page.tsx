@@ -334,7 +334,7 @@ export default function Home() {
              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                <div className={styles.avatar}>AI</div>
                <div className={styles.headerText} style={{ textAlign: "left" }}>
-                 <h1 style={{ fontSize: "20px", margin: 0 }}>BhaktiBot</h1>
+                 <h1 style={{ fontSize: "20px", margin: 0 }}>InterviewBot</h1>
                  <p style={{ margin: 0, fontSize: "13px", opacity: 0.7 }}>{isLoading ? "Analyzing..." : "Ready for your interview"}</p>
                </div>
              </div>
@@ -389,7 +389,7 @@ export default function Home() {
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ width: "650px", maxHeight: "80vh", overflowY: "auto", background: "#1e1e1e", borderRadius: "16px", padding: "32px", color: "white", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "16px" }}>
-               <h2 style={{ margin: 0, fontSize: "24px" }}>📖 How to Use BhaktiBot</h2>
+               <h2 style={{ margin: 0, fontSize: "24px" }}>📖 How to Use InterviewBot</h2>
                <button onClick={() => setShowHelpModal(false)} style={{ background: "transparent", color: "rgba(255,255,255,0.5)", border: "none", fontSize: "28px", cursor: "pointer" }}>&times;</button>
              </div>
              

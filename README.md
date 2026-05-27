@@ -1,6 +1,6 @@
-# 🚀 BhaktiBot - AI-Powered Interview Simulator
+# 🚀 InterviewBot - AI-Powered Interview Simulator
 
-BhaktiBot is a full-stack, AI-driven interview simulation platform designed to help candidates prepare for both behavioral and technical interviews. Using advanced Agentic AI workflows and Retrieval-Augmented Generation (RAG), the bot contextualizes interviews based on a user's actual uploaded resume and provides a live coding environment to evaluate Data Structures and Algorithms (DSA) solutions.
+InterviewBot is a full-stack, AI-driven interview simulation platform designed to help candidates prepare for both behavioral and technical interviews. Using advanced Agentic AI workflows and Retrieval-Augmented Generation (RAG), the bot contextualizes interviews based on a user's actual uploaded resume and provides a live coding environment to evaluate Data Structures and Algorithms (DSA) solutions.
 
 ## ✨ Features
 

@@ -58,7 +58,10 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     structured_llm = llm.with_structured_output(InterviewResponse)
     
     if current_stage == "greeting":
-        system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate, tell them you have read their resume, and ask if they are ready to begin the {interview_type} round."
+        if interview_type == "resume":
+            system_prompt = "You are an expert AI interviewer. You have been given the candidate's resume. Greet them warmly, briefly acknowledge you have read their resume, highlight one or two things you noticed (like a specific skill or project), and ask if they are ready to begin a resume-based interview."
+        else:
+            system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate, tell them you have read their resume, and ask if they are ready to begin the {interview_type} round."
     elif current_stage == "technical":
         if interview_type == "dsa":
             system_prompt = """You are a strict technical interviewer. You MUST ask a Data Structures and Algorithms question using exactly the following template. Do NOT use markdown (* or #). Use exactly these headings:
@@ -146,6 +149,17 @@ CONSTRAINTS
 Please explain your understanding and approach.
 
 Do not transition to 'feedback' until they demonstrate solid understanding."""
+        elif interview_type == "resume":
+            system_prompt = """You are a senior technical interviewer conducting a resume-based interview. Based on the candidate's resume provided below, ask SPECIFIC, targeted questions about:
+- Their past projects (ask about architecture decisions, challenges faced, outcomes)
+- Skills and technologies listed (ask them to explain or demonstrate proficiency)
+- Work experience (ask about their role, responsibilities, impact)
+- Any gaps or interesting career transitions
+
+Do NOT ask generic questions. Every question must directly reference something from their resume.
+Do NOT use markdown (* or #).
+Ask ONE focused question at a time. Dig deeper with follow-up questions before moving to the next topic.
+Do not transition to 'feedback' until you have covered at least 3 distinct areas from their resume."""
         else:
             system_prompt = "You are an expert interviewer. Ask a relevant question."
             

@@ -40,7 +40,8 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [interviewType, setInterviewType] = useState("dsa");
+  const [resumeUploaded, setResumeUploaded] = useState(false);
+  const [interviewType, setInterviewType] = useState("");
   const [userId, setUserId] = useState("guest");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState("");
@@ -88,7 +89,7 @@ export default function Home() {
     
     if (loadedSessions.length === 0) {
       const newThreadId = id + "_thread_" + Math.random().toString(36).substring(2, 10);
-      loadedSessions = [{ id: newThreadId, type: "dsa", date: new Date().toLocaleDateString() }];
+      loadedSessions = [{ id: newThreadId, type: "", date: new Date().toLocaleDateString() }];
     }
     
     setSessions(loadedSessions);
@@ -166,6 +167,7 @@ export default function Home() {
     localStorage.setItem(`sessions_${userId}`, JSON.stringify(updatedSessions));
     setCurrentThreadId(newThreadId);
     setMessages([]);
+    setResumeUploaded(false); // Reset so upload prompt shows again for resume type
   };
 
   useEffect(() => {
@@ -176,16 +178,15 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!userApiKey) {
+       setShowApiKeyModal(true);
+       return;
+    }
+
     setIsUploading(true);
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("user_id", userId);
-
-    if (!userApiKey) {
-       setShowApiKeyModal(true);
-       setIsUploading(false);
-       return;
-    }
+    formData.append("user_id", currentThreadId || userId);
     
     try {
       const response = await fetch(`${BACKEND_URL}/upload-resume`, {
@@ -194,10 +195,27 @@ export default function Home() {
         body: formData,
       });
       if (!response.ok) throw new Error("Upload failed");
-      alert("Resume uploaded successfully! The AI will now use it.");
+      setResumeUploaded(true);
+      // Auto-kick off the interview with a greeting message
+      const greeting: Message = { role: "user", content: "Hi, I have uploaded my resume. Please start the interview." };
+      setMessages([greeting]);
+      setIsLoading(true);
+      try {
+        const chatRes = await fetch(`${BACKEND_URL}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Gemini-Key": userApiKey },
+          body: JSON.stringify({ message: greeting.content, thread_id: currentThreadId, interview_type: "resume" }),
+        });
+        const data = await chatRes.json().catch(() => ({}));
+        if (chatRes.ok) {
+          setMessages(prev => [...prev, { role: "bot", content: data.reply }]);
+          speakText(data.reply);
+        }
+      } catch {}
+      finally { setIsLoading(false); }
     } catch (error) {
       console.error(error);
-      alert("Failed to upload resume.");
+      alert("Failed to upload resume. Please try again.");
     } finally {
       setIsUploading(false);
     }
@@ -274,31 +292,24 @@ export default function Home() {
                value={interviewType}
                onChange={(e) => startNewChat(e.target.value)}
                style={{
-                 background: "rgba(0,0,0,0.5)", color: "white", padding: "10px 12px",
+                 background: "rgba(0,0,0,0.5)", color: interviewType ? "white" : "rgba(255,255,255,0.4)", padding: "10px 12px",
                  borderRadius: "8px", border: "1px solid rgba(255,255,255,0.2)", outline: "none",
                  cursor: "pointer", fontSize: "14px", width: "100%"
                }}
              >
-               <option value="dsa">DSA & Complexity</option>
+               <option value="" disabled hidden>Type of interview</option>
+               <option value="dsa">Data structures and algorithms</option>
                <option value="sql">SQL & Databases</option>
                <option value="llsd">Low Level System Design</option>
                <option value="system_design">High Level System Design</option>
                <option value="oops">OOPs Concepts</option>
                <option value="hr">HR & Behavioral</option>
+               <option value="resume">Resume based</option>
              </select>
 
              <button onClick={() => setShowApiKeyModal(true)} style={{ background: userApiKey ? "rgba(0,255,0,0.05)" : "rgba(255,0,0,0.05)", color: userApiKey ? "#4ade80" : "#f87171", border: `1px solid ${userApiKey ? "rgba(74, 222, 128, 0.3)" : "rgba(248, 113, 113, 0.3)"}`, padding: "10px 12px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "bold", textAlign: "left" }}>
                ⚙️ API Key {userApiKey ? "(Set)" : "(Missing)"}
              </button>
-
-             <label style={{
-                background: "rgba(255,255,255,0.05)", padding: "10px 12px", borderRadius: "8px",
-                cursor: "pointer", fontSize: "14px", border: "1px solid rgba(255,255,255,0.1)",
-                transition: "all 0.2s", display: "block", textAlign: "left", color: "white"
-             }}>
-                {isUploading ? "Uploading..." : "📄 Upload Resume"}
-                <input type="file" accept=".pdf" onChange={uploadResume} disabled={isUploading} style={{ display: "none" }} />
-             </label>
 
              <Link href="/dashboard" style={{ textDecoration: "none", display: "block" }}>
                 <button style={{
@@ -343,7 +354,33 @@ export default function Home() {
 
         {/* Chat Area */}
         <div className={styles.messagesContainer}>
-          {messages.length === 0 && (
+          {/* Resume upload prompt — shown only for resume type before upload */}
+          {interviewType === "resume" && !resumeUploaded && messages.length === 0 && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "24px", padding: "40px" }}>
+              <div style={{ fontSize: "48px" }}>📄</div>
+              <div style={{ textAlign: "center", color: "white" }}>
+                <h2 style={{ margin: "0 0 8px 0", fontSize: "22px" }}>Resume Based Interview</h2>
+                <p style={{ margin: 0, color: "rgba(255,255,255,0.6)", fontSize: "14px", maxWidth: "380px" }}>
+                  Upload your PDF resume and I will read it, then ask you tailored interview questions based on your experience, skills, and projects.
+                </p>
+              </div>
+              <label style={{
+                background: isUploading ? "rgba(79,70,229,0.5)" : "#4f46e5",
+                color: "white", padding: "14px 32px", borderRadius: "10px",
+                cursor: isUploading ? "wait" : "pointer", fontSize: "15px",
+                fontWeight: "bold", transition: "background 0.2s",
+                display: "inline-flex", alignItems: "center", gap: "8px",
+                border: "none"
+              }}>
+                {isUploading ? "⏳ Processing your resume..." : "📤 Upload Resume (PDF)"}
+                <input type="file" accept=".pdf" onChange={uploadResume} disabled={isUploading} style={{ display: "none" }} />
+              </label>
+              <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)", margin: 0 }}>Only PDF files are supported</p>
+            </div>
+          )}
+
+          {/* Default welcome message for non-resume types */}
+          {interviewType !== "resume" && messages.length === 0 && (
             <div className={styles.messageRow + " " + styles.bot}>
               <div className={styles.messageBubble}>
                 Hello! I am your AI Interviewer. Please tell me your name and what domain you would like to be interviewed on.
@@ -361,8 +398,8 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
-        <form onSubmit={sendMessage} className={styles.inputArea}>
+        {/* Input Area — hidden for resume type until resume is uploaded */}
+        <form onSubmit={sendMessage} className={styles.inputArea} style={{ display: interviewType === "resume" && !resumeUploaded ? "none" : undefined }}>
           <button type="button" onClick={() => setIsEditorOpen(true)} className={styles.sendButton} style={{ background: "#4f46e5", padding: "0 16px" }}>
             &lt;/&gt; Code
           </button>
@@ -395,8 +432,8 @@ export default function Home() {
              
              <div style={{ display: "flex", flexDirection: "column", gap: "20px", fontSize: "15px", lineHeight: "1.6", color: "rgba(255,255,255,0.8)" }}>
                <div>
-                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>1. Tailor Your Interview (Optional)</strong>
-                 Use the left sidebar to upload your PDF Resume. The bot will automatically extract your skills and projects to ask highly personalized questions.
+                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>1. Resume Based Interview</strong>
+                 Select <strong>Resume based</strong> from the interview type dropdown. You will be prompted to upload your PDF resume directly in the chat. The bot will read your resume and ask highly personalized questions based on your skills, experience, and projects.
                </div>
                
                <div>

@@ -94,7 +94,7 @@ export default function Home() {
     
     setSessions(loadedSessions);
     setCurrentThreadId(loadedSessions[0].id);
-    setInterviewType(loadedSessions[0].type);
+    setInterviewType(""); // Always start with placeholder, don't restore old type
 
     const savedKey = localStorage.getItem("gemini_api_key");
     if (savedKey) setUserApiKey(savedKey);

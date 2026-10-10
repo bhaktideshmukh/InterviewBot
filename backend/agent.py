@@ -52,7 +52,7 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     resume_context = get_resume_context(thread_id, api_key)
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         google_api_key=api_key
     )
     structured_llm = llm.with_structured_output(InterviewResponse)

@@ -125,6 +125,77 @@ def get_dashboard(user_id: str = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class LeetCodeVerifyRequest(BaseModel):
+    username: str
+    problem_slug: str = ""
+    problem_title: str = ""
+
+@app.post("/api/verify-leetcode")
+def verify_leetcode(req: LeetCodeVerifyRequest):
+    import urllib.request, json, re
+    username = req.username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="LeetCode username is required")
+
+    graphql_query = """query recentAcSubmissions($user: String!, $limit: Int!) {
+      recentAcSubmissionList(username: $user, limit: $limit) {
+        id
+        title
+        titleSlug
+        timestamp
+      }
+    }"""
+    req_body = json.dumps({"query": graphql_query, "variables": {"user": username, "limit": 20}}).encode("utf-8")
+    http_req = urllib.request.Request(
+        "https://leetcode.com/graphql",
+        data=req_body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://leetcode.com"
+        }
+    )
+    try:
+        resp = urllib.request.urlopen(http_req, timeout=10)
+        data = json.loads(resp.read().decode("utf-8"))
+        submissions = data.get("data", {}).get("recentAcSubmissionList") or []
+
+        target_slug = req.problem_slug.strip().lower()
+        target_title = req.problem_title.strip().lower()
+
+        if not target_slug and target_title:
+            target_slug = re.sub(r"[^a-z0-9]+", "-", target_title).strip("-")
+
+        for sub in submissions:
+            sub_slug = (sub.get("titleSlug") or "").lower()
+            sub_title = (sub.get("title") or "").lower()
+            if target_slug and (target_slug == sub_slug or target_slug in sub_slug or sub_slug in target_slug):
+                return {
+                    "accepted": True,
+                    "title": sub.get("title"),
+                    "titleSlug": sub.get("titleSlug"),
+                    "timestamp": sub.get("timestamp"),
+                    "message": f"Verified! Solution for '{sub.get('title')}' was Accepted on LeetCode."
+                }
+            if target_title and (target_title == sub_title or target_title in sub_title):
+                return {
+                    "accepted": True,
+                    "title": sub.get("title"),
+                    "titleSlug": sub.get("titleSlug"),
+                    "timestamp": sub.get("timestamp"),
+                    "message": f"Verified! Solution for '{sub.get('title')}' was Accepted on LeetCode."
+                }
+
+        return {
+            "accepted": False,
+            "message": f"No recent accepted submission found for '{req.problem_slug or req.problem_title}' under username '{username}'. Please submit your solution on LeetCode and click verify."
+        }
+    except Exception as e:
+        return {
+            "accepted": False,
+            "message": f"Could not verify LeetCode profile '{username}': {str(e)}"
+        }
+
 class ExecuteRequest(BaseModel):
     language: str
     code: str

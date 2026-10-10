@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import Editor from "@monaco-editor/react";
 import styles from "./page.module.css";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
@@ -45,16 +44,15 @@ export default function Home() {
   const [userId, setUserId] = useState("guest");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState("");
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [userApiKey, setUserApiKey] = useState("");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [editorLang, setEditorLang] = useState("javascript");
-  const [editorCode, setEditorCode] = useState("// Write your code here...");
-  const [testCases, setTestCases] = useState("");
-  const [executionOutput, setExecutionOutput] = useState("");
-  const [isExecuting, setIsExecuting] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [leetcodeUrl, setLeetcodeUrl] = useState("");
+  const [leetcodeSlug, setLeetcodeSlug] = useState("");
+  const [leetcodeUsername, setLeetcodeUsername] = useState("");
+  const [isVerifyingLc, setIsVerifyingLc] = useState(false);
+  const [lcVerifyResult, setLcVerifyResult] = useState<{ accepted?: boolean; message: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const activeThreadRef = useRef("");
@@ -99,6 +97,9 @@ export default function Home() {
     const savedKey = localStorage.getItem("gemini_api_key");
     if (savedKey) setUserApiKey(savedKey);
 
+    const savedLcUser = localStorage.getItem("leetcode_username");
+    if (savedLcUser) setLeetcodeUsername(savedLcUser);
+
     // Setup Web Speech API
     if (typeof window !== "undefined" && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -138,14 +139,28 @@ export default function Home() {
     window.speechSynthesis.speak(utterance);
   };
 
+  const extractLeetCode = (text: string) => {
+    const match = text.match(/https:\/\/leetcode\.com\/problems\/([a-zA-Z0-9_-]+)/i);
+    if (match) {
+      setLeetcodeUrl(match[0] + "/");
+      setLeetcodeSlug(match[1]);
+    }
+  };
+
   // Load chat history for current thread
   useEffect(() => {
     if (!currentThreadId) return;
     const saved = localStorage.getItem(currentThreadId);
     if (saved) {
-      setMessages(JSON.parse(saved));
+      const parsed: Message[] = JSON.parse(saved);
+      setMessages(parsed);
+      for (const m of parsed) {
+        if (m.role === "bot") extractLeetCode(m.content);
+      }
     } else {
       setMessages([]);
+      setLeetcodeUrl("");
+      setLeetcodeSlug("");
     }
   }, [currentThreadId]);
 
@@ -157,8 +172,8 @@ export default function Home() {
   }, [messages]);
 
   const startNewChat = (typeOverride?: string) => {
-    const typeToUse = typeOverride || interviewType;
-    if (typeOverride) setInterviewType(typeOverride);
+    const typeToUse = typeOverride !== undefined ? typeOverride : interviewType;
+    if (typeOverride !== undefined) setInterviewType(typeOverride);
     
     const newThreadId = userId + "_thread_" + Math.random().toString(36).substring(2, 10);
     const newSession = { id: newThreadId, type: typeToUse, date: new Date().toLocaleDateString() };
@@ -167,7 +182,39 @@ export default function Home() {
     localStorage.setItem(`sessions_${userId}`, JSON.stringify(updatedSessions));
     setCurrentThreadId(newThreadId);
     setMessages([]);
+    setLeetcodeUrl("");
+    setLeetcodeSlug("");
+    setLcVerifyResult(null);
     setResumeUploaded(false); // Reset so upload prompt shows again for resume type
+  };
+
+  const verifyLeetCode = async () => {
+    if (!leetcodeUsername.trim()) {
+      alert("Please enter your LeetCode username first.");
+      return;
+    }
+    localStorage.setItem("leetcode_username", leetcodeUsername.trim());
+    setIsVerifyingLc(true);
+    setLcVerifyResult(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/verify-leetcode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: leetcodeUsername.trim(),
+          problem_slug: leetcodeSlug
+        })
+      });
+      const data = await res.json();
+      setLcVerifyResult(data);
+      if (data.accepted) {
+        setInput(`My solution for ${leetcodeSlug || "the problem"} has been verified and Accepted on LeetCode! Here is my approach and time/space complexity: `);
+      }
+    } catch {
+      setLcVerifyResult({ accepted: false, message: "Could not reach backend verification service." });
+    } finally {
+      setIsVerifyingLc(false);
+    }
   };
 
   useEffect(() => {
@@ -267,6 +314,8 @@ export default function Home() {
       // Add AI response to UI
       setMessages((prev) => [...prev, { role: "bot", content: data.reply }]);
       speakText(data.reply);
+      // Extract LeetCode URL from bot reply for the shortcut button
+      extractLeetCode(data.reply);
     } catch (error: any) {
       console.error(error);
       const errMsg = error.message === "Failed to fetch" 
@@ -292,19 +341,32 @@ export default function Home() {
                value={interviewType}
                onChange={(e) => startNewChat(e.target.value)}
                style={{
-                 background: "rgba(0,0,0,0.5)", color: interviewType ? "white" : "rgba(255,255,255,0.4)", padding: "10px 12px",
-                 borderRadius: "8px", border: "1px solid rgba(255,255,255,0.2)", outline: "none",
-                 cursor: "pointer", fontSize: "14px", width: "100%"
+                 backgroundColor: "#000000",
+                 color: "#ffffff",
+                 padding: "10px 36px 10px 12px",
+                 borderRadius: "8px",
+                 border: "1px solid rgba(255,255,255,0.35)",
+                 outline: "none",
+                 cursor: "pointer",
+                 fontSize: "14px",
+                 width: "100%",
+                 WebkitAppearance: "none",
+                 MozAppearance: "none",
+                 appearance: "none",
+                 backgroundImage: `url("data:image/svg+xml;utf8,<svg fill='%23ffffff' height='20' viewBox='0 0 24 24' width='20' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>")`,
+                 backgroundRepeat: "no-repeat",
+                 backgroundPosition: "calc(100% - 10px) center",
+                 colorScheme: "dark"
                }}
              >
-               <option value="" disabled hidden>Type of interview</option>
-               <option value="dsa">Data structures and algorithms</option>
-               <option value="sql">SQL & Databases</option>
-               <option value="llsd">Low Level System Design</option>
-               <option value="system_design">High Level System Design</option>
-               <option value="oops">OOPs Concepts</option>
-               <option value="hr">HR & Behavioral</option>
-               <option value="resume">Resume based</option>
+               <option value="" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Type of interview</option>
+               <option value="dsa" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Data structures and algorithms</option>
+               <option value="sql" style={{ backgroundColor: "#000000", color: "#ffffff" }}>SQL & Databases</option>
+               <option value="llsd" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Low Level System Design</option>
+               <option value="system_design" style={{ backgroundColor: "#000000", color: "#ffffff" }}>High Level System Design</option>
+               <option value="oops" style={{ backgroundColor: "#000000", color: "#ffffff" }}>OOPs Concepts</option>
+               <option value="hr" style={{ backgroundColor: "#000000", color: "#ffffff" }}>HR & Behavioral</option>
+               <option value="resume" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Resume based</option>
              </select>
 
              <button onClick={() => setShowApiKeyModal(true)} style={{ background: userApiKey ? "rgba(0,255,0,0.05)" : "rgba(255,0,0,0.05)", color: userApiKey ? "#4ade80" : "#f87171", border: `1px solid ${userApiKey ? "rgba(74, 222, 128, 0.3)" : "rgba(248, 113, 113, 0.3)"}`, padding: "10px 12px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "bold", textAlign: "left" }}>
@@ -398,11 +460,138 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* LeetCode Grind 75 Problem Banner — visible when problem is assigned */}
+        {interviewType === "dsa" && leetcodeUrl && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(248, 159, 27, 0.12), rgba(18, 18, 18, 0.95))",
+            border: "1px solid rgba(248, 159, 27, 0.35)",
+            borderRadius: "12px",
+            padding: "12px 16px",
+            margin: "0 16px 10px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.3)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "22px" }}>🟧</span>
+                <div>
+                  <div style={{ color: "#f89f1b", fontWeight: "bold", fontSize: "14px" }}>
+                    LeetCode Problem: {leetcodeSlug ? leetcodeSlug.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "Grind 75 Problem"}
+                  </div>
+                  <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "12px" }}>
+                    Solve on LeetCode, then verify acceptance or discuss your complexity
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <a
+                  href={leetcodeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    background: "#f89f1b",
+                    color: "#000",
+                    fontWeight: "bold",
+                    padding: "7px 14px",
+                    borderRadius: "6px",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px"
+                  }}
+                >
+                  🚀 Solve on LeetCode ↗
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInput("I have solved the problem on LeetCode and it was Accepted! My approach and complexity: ");
+                  }}
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    padding: "7px 12px",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "13px"
+                  }}
+                >
+                  I've Solved It 👍
+                </button>
+              </div>
+            </div>
+
+            {/* LeetCode Verification Form */}
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              flexWrap: "wrap",
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              paddingTop: "8px"
+            }}>
+              <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.6)" }}>Verify LeetCode:</span>
+              <input
+                type="text"
+                placeholder="Your LeetCode username"
+                value={leetcodeUsername}
+                onChange={(e) => setLeetcodeUsername(e.target.value)}
+                style={{
+                  background: "#000",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: "6px",
+                  padding: "5px 10px",
+                  fontSize: "12px",
+                  outline: "none",
+                  flex: "1",
+                  minWidth: "150px"
+                }}
+              />
+              <button
+                type="button"
+                onClick={verifyLeetCode}
+                disabled={isVerifyingLc}
+                style={{
+                  background: isVerifyingLc ? "#666" : "#22c55e",
+                  color: "#000",
+                  fontWeight: "bold",
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "6px 14px",
+                  cursor: isVerifyingLc ? "wait" : "pointer",
+                  fontSize: "12px"
+                }}
+              >
+                {isVerifyingLc ? "Checking..." : "Verify Acceptance"}
+              </button>
+              {lcVerifyResult && (
+                <span style={{
+                  fontSize: "12px",
+                  color: lcVerifyResult.accepted ? "#4ade80" : "#f87171",
+                  fontWeight: "500",
+                  marginLeft: "4px"
+                }}>
+                  {lcVerifyResult.message}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Input Area — hidden for resume type until resume is uploaded */}
         <form onSubmit={sendMessage} className={styles.inputArea} style={{ display: interviewType === "resume" && !resumeUploaded ? "none" : undefined }}>
-          <button type="button" onClick={() => setIsEditorOpen(true)} className={styles.sendButton} style={{ background: "#4f46e5", padding: "0 16px" }}>
-            &lt;/&gt; Code
-          </button>
+          {interviewType === "dsa" && leetcodeUrl && (
+            <a href={leetcodeUrl} target="_blank" rel="noopener noreferrer" className={styles.sendButton}
+              style={{ background: "#f89f1b", color: "black", padding: "0 14px", fontWeight: "bold", textDecoration: "none", display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap", fontSize: "13px" }}>
+              🔗 LeetCode
+            </a>
+          )}
           <button type="button" onClick={toggleListening} className={styles.sendButton} style={{ background: isListening ? "#ef4444" : "rgba(255,255,255,0.1)", color: isListening ? "white" : "#ccc", padding: "0 16px", transition: "all 0.2s" }} title="Click to speak">
             {isListening ? "🎙️ Listening..." : "🎤"}
           </button>
@@ -442,8 +631,8 @@ export default function Home() {
                </div>
 
                <div>
-                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>3. Writing Code (DSA / SQL)</strong>
-                 When asked to code, click the <strong>&lt;/&gt; Open Code Editor</strong> button near the chat input. A full IDE will pop up where you can write code, run test cases, and securely submit it back to the AI for evaluation.
+                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>3. DSA Interview (LeetCode)</strong>
+                 When the bot gives you a DSA problem, a <strong>🔗 LeetCode</strong> button will appear next to the chat input — click it to open the exact problem on LeetCode. Solve it there, then come back to discuss your approach and time/space complexity with the bot.
                </div>
 
                <div>
@@ -500,76 +689,6 @@ export default function Home() {
         </div>
       )}
 
-      {isEditorOpen && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ width: "85%", height: "85%", background: "#1e1e1e", borderRadius: "16px", overflow: "hidden", display: "flex", flexDirection: "column", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
-            <div style={{ padding: "16px 24px", background: "#2d2d2d", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                <h3 style={{ color: "white", margin: 0 }}>Code Editor</h3>
-                <select value={editorLang} onChange={(e) => setEditorLang(e.target.value)} style={{ background: "#444", color: "white", padding: "8px 12px", borderRadius: "8px", border: "none", outline: "none", cursor: "pointer" }}>
-                  <option value="javascript">JavaScript</option>
-                  <option value="python">Python</option>
-                  <option value="java">Java</option>
-                  <option value="cpp">C++</option>
-                  <option value="sql">SQL</option>
-                </select>
-              </div>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <button type="button" onClick={() => setIsEditorOpen(false)} style={{ background: "transparent", color: "white", border: "none", cursor: "pointer", padding: "8px 16px", borderRadius: "8px" }}>Cancel</button>
-                <button type="button" disabled={isExecuting} onClick={async () => {
-                  setIsExecuting(true);
-                  try {
-                    const res = await fetch(`${BACKEND_URL}/api/execute`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ language: editorLang, code: editorCode, test_cases: testCases })
-                    });
-                    const data = await res.json();
-                    setExecutionOutput(data.output);
-                  } catch(e) {
-                    setExecutionOutput("Network Error or Backend Down");
-                  } finally {
-                    setIsExecuting(false);
-                  }
-                }} style={{ background: "#10b981", color: "white", border: "none", padding: "8px 24px", borderRadius: "8px", cursor: isExecuting ? "wait" : "pointer", fontWeight: "600" }}>{isExecuting ? "Running..." : "Run Code"}</button>
-                <button type="button" onClick={() => {
-                  setInput("Here is my code:\n\n```" + editorLang + "\n" + editorCode + "\n```");
-                  setIsEditorOpen(false);
-                }} style={{ background: "#3b82f6", color: "white", border: "none", padding: "8px 24px", borderRadius: "8px", cursor: "pointer", fontWeight: "600" }}>Submit Code</button>
-              </div>
-            </div>
-            <div style={{ flex: 1, padding: "8px 0", display: "flex", flexDirection: "column" }}>
-              <div style={{ flex: 2 }}>
-                <Editor
-                  height="100%"
-                  theme="vs-dark"
-                  language={editorLang}
-                  value={editorCode}
-                  onChange={(value) => setEditorCode(value || "")}
-                  options={{ minimap: { enabled: false }, fontSize: 15, padding: { top: 16 } }}
-                />
-              </div>
-              <div style={{ flex: 1, display: "flex", borderTop: "1px solid #333", background: "#000" }}>
-                <div style={{ flex: 1, borderRight: "1px solid #333", padding: "12px", display: "flex", flexDirection: "column" }}>
-                  <div style={{ color: "#6b7280", marginBottom: "8px", fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px" }}>Test Cases (Python Auto-run)</div>
-                  <textarea 
-                    value={testCases} 
-                    onChange={e => setTestCases(e.target.value)}
-                    placeholder="e.g.\n[[1,3],[2,6]]\n[1,2,3], 5"
-                    style={{ flex: 1, background: "transparent", border: "none", color: "white", fontFamily: "monospace", resize: "none", outline: "none", fontSize: "14px" }}
-                  />
-                </div>
-                <div style={{ flex: 1, padding: "12px", overflowY: "auto", fontFamily: "monospace", color: "#10b981", fontSize: "14px", whiteSpace: "pre-wrap" }}>
-                  <div style={{ color: "#6b7280", marginBottom: "8px", fontSize: "12px", textTransform: "uppercase", letterSpacing: "1px" }}>Execution Output</div>
-                  <div style={{ color: executionOutput.includes("Error") || executionOutput.includes("failed") ? "#ef4444" : "#10b981" }}>
-                    {isExecuting ? "Executing code..." : (executionOutput || "Output will appear here.")}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

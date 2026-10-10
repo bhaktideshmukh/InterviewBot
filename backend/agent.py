@@ -41,7 +41,6 @@ class InterviewState(TypedDict):
     api_key: str
 
 from langchain_core.runnables import RunnableConfig
-import psycopg
 
 # --- 3. THE NODE ---
 def interviewer_node(state: InterviewState, config: RunnableConfig):
@@ -49,10 +48,10 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     interview_type = state.get("interview_type", "dsa")
     api_key = state.get("api_key") or os.getenv("GEMINI_API_KEY")
     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
-    resume_context = get_resume_context(thread_id, api_key)
+    resume_context = get_resume_context(thread_id, api_key) if interview_type == "resume" else ""
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3.8-flash",
+        model="gemini-3.6-flash",
         google_api_key=api_key
     )
     structured_llm = llm.with_structured_output(InterviewResponse)
@@ -60,14 +59,23 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     if current_stage == "greeting":
         if interview_type == "resume":
             system_prompt = "You are an expert AI interviewer. You have been given the candidate's resume. Greet them warmly, briefly acknowledge you have read their resume, highlight one or two things you noticed (like a specific skill or project), and ask if they are ready to begin a resume-based interview."
+        elif interview_type == "dsa":
+            system_prompt = "You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview. Warmly greet the candidate, tell them that today's question is selected from the renowned Grind 75 curriculum and will be solved directly on LeetCode. Ask them if they are ready to begin!"
         else:
-            system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate, tell them you have read their resume, and ask if they are ready to begin the {interview_type} round."
+            system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate and ask if they are ready to begin the {interview_type} round."
     elif current_stage == "technical":
         if interview_type == "dsa":
-            system_prompt = """You are a strict technical interviewer. You MUST ask a Data Structures and Algorithms question using exactly the following template. Do NOT use markdown (* or #). Use exactly these headings:
+            system_prompt = """You are a senior technical interviewer conducting a Data Structures & Algorithms interview.
+You MUST pick a real coding question from the famous Grind 75 list (https://www.techinterviewhandbook.org/grind75/) such as Two Sum, Valid Parentheses, Merge Two Sorted Lists, Best Time to Buy and Sell Stock, Invert Binary Tree, Maximum Subarray, 3Sum, Binary Search, Longest Substring Without Repeating Characters, Coin Change, Course Schedule, or Number of Islands.
+
+You MUST include the exact LeetCode problem URL in your reply using this format:
 
 PROBLEM STATEMENT
+[Problem Title & Difficulty]
 [Problem description]
+
+LEETCODE LINK
+https://leetcode.com/problems/[problem-slug]/
 
 EXAMPLE INPUTS & OUTPUTS
 [Examples]
@@ -75,9 +83,10 @@ EXAMPLE INPUTS & OUTPUTS
 CONSTRAINTS
 [Constraints]
 
-Please share your approach and the Time/Space Complexity before writing code.
+INSTRUCTIONS
+Solve this problem on LeetCode by clicking the LeetCode button/link. Once your solution is Accepted on LeetCode, explain your approach, Time Complexity, and Space Complexity here so we can evaluate your solution.
 
-Do not transition to the 'feedback' stage until they correctly answer the complexity."""
+Do not transition to the 'feedback' stage until they have solved the problem and correctly explained their approach and Time/Space complexity."""
         elif interview_type == "sql":
             system_prompt = """You are a strict technical interviewer. You MUST ask an advanced SQL query question using exactly the following template. Do NOT use markdown (* or #). Use exactly these headings:
 
@@ -196,6 +205,7 @@ Do not transition to 'feedback' until you have covered at least 3 distinct areas
         
         thread_id = config.get("configurable", {}).get("thread_id", "unknown")
         try:
+            import psycopg
             with psycopg.connect(os.getenv("DATABASE_URL")) as conn:
                 with conn.cursor() as cur:
                     cur.execute(

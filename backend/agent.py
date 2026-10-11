@@ -75,20 +75,43 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     structured_fallback = llm_fallback.with_structured_output(InterviewResponse)
     structured_llm = structured_primary.with_fallbacks([structured_fallback])
     
+    prob_title = (dsa_problem or {}).get("title", "")
+    prob_diff = (dsa_problem or {}).get("difficulty", "")
+    prob_topic = (dsa_problem or {}).get("topic", "")
+    prob_url = (dsa_problem or {}).get("url", "")
+    if not prob_url and dsa_problem and dsa_problem.get("slug"):
+        prob_url = f"https://leetcode.com/problems/{dsa_problem['slug']}/"
+
     if current_stage == "greeting":
         if interview_type == "resume":
             system_prompt = "You are an expert AI interviewer. You have been given the candidate's resume. Greet them warmly, briefly acknowledge you have read their resume, highlight one or two things you noticed (like a specific skill or project), and ask if they are ready to begin a resume-based interview."
         elif interview_type == "dsa":
-            system_prompt = "You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview. Warmly greet the candidate, tell them that today's question will be selected from the renowned Grind 75 curriculum and that you will first discuss the approach and complexities together before coding on LeetCode. Ask them if they are ready to begin!"
+            system_prompt = f"""You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview.
+
+ASSIGNED PROBLEM FOR THIS SESSION:
+- Title: {prob_title} ({prob_diff})
+- Topic: {prob_topic}
+- LeetCode Link: {prob_url}
+
+SESSION STAGES & RULES:
+1. GREETING / INITIAL INTRO:
+   - If this is the start of the conversation and the candidate has NOT yet confirmed they are ready:
+     Warmly greet the candidate, tell them that today's question will be selected from the renowned Grind 75 curriculum, and that you will first discuss the conceptual approach and time/space complexities together right here in chat before coding on LeetCode. Ask them if they are ready to begin!
+     Keep next_stage as 'greeting'.
+
+2. CANDIDATE CONFIRMED READINESS (e.g., they said "Lets begin", "Ready", "Yes", "Sure", "Start", "I am ready", "Let's do it", etc.):
+   - You MUST set next_stage to 'technical'.
+   - You MUST announce the assigned problem using EXACTLY this format:
+     "Awesome, let's dive right in! We have picked the '{prob_title}' ({prob_diff}) question for you!
+LeetCode Link: {prob_url}
+
+Please open the LeetCode link to review the problem. Before writing any code, let's discuss your thought process, possible approaches (e.g., brute force vs optimal), and their Time & Space Complexities right here in the chat. What are your initial thoughts on solving this?"
+   - CRITICAL CONSISTENCY RULE: The assigned problem is '{prob_title}'. NEVER mention or substitute 'Two Sum' unless the assigned problem is '{prob_title}'.
+   - CRITICAL RULE: DO NOT copy or dump the full problem description, test cases, or constraints into the chat. Only share the title, difficulty, and LeetCode link."""
         else:
             system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate and ask if they are ready to begin the {interview_type} round."
     elif current_stage == "technical":
         if interview_type == "dsa":
-            prob_title = dsa_problem.get("title", "Two Sum")
-            prob_diff = dsa_problem.get("difficulty", "Easy")
-            prob_topic = dsa_problem.get("topic", "Algorithms")
-            prob_url = dsa_problem.get("url", f"https://leetcode.com/problems/{dsa_problem.get('slug', 'two-sum')}/")
-
             system_prompt = f"""You are a senior technical interviewer conducting a Data Structures & Algorithms interview.
 
 ASSIGNED PROBLEM FOR THIS CANDIDATE:
@@ -97,16 +120,13 @@ ASSIGNED PROBLEM FOR THIS CANDIDATE:
 - LeetCode Link: {prob_url}
 
 CRITICAL MANDATORY INSTRUCTIONS:
-1. When introducing the question to the candidate, you MUST announce the question and include the exact LeetCode URL:
+1. The assigned problem is '{prob_title}'. NEVER mention or substitute 'Two Sum' or any other problem unless the assigned problem is '{prob_title}'.
+2. If introducing or referencing the question, you MUST use:
 "We have picked the '{prob_title}' ({prob_diff}) question for you!
 LeetCode Link: {prob_url}"
-2. You MUST include the exact LeetCode URL ({prob_url}) in your reply. Do NOT omit it.
-3. DO NOT paste the full problem statement text, test cases, or constraints into the chat.
-4. Instruct the candidate:
-"Please open the LeetCode link to review the problem. Before writing any code, let's discuss your thought process, possible approaches (e.g., brute force vs optimal), and their Time & Space Complexities right here in the chat. What are your initial thoughts on solving this?"
-
-INTERVIEW DISCUSSION FLOW:
-- First, discuss candidate's proposed approaches and Time & Space Complexities.
+3. DO NOT paste the full problem statement text, test cases, or constraints into the chat. Instruct candidate to review it on LeetCode: {prob_url}
+4. INTERVIEW DISCUSSION FLOW:
+- First, discuss candidate's proposed approaches and Time & Space Complexities right here in the chat.
 - Guide them with questions or subtle hints if their approach is suboptimal or incomplete.
 - Once they have explained the optimal approach and correct complexities, invite them to code and submit on LeetCode.
 - Do not transition to the 'feedback' stage until they have thoroughly discussed their approach and complexities, and completed the coding problem."""
@@ -128,26 +148,8 @@ EXPECTED OUTPUT
 Please share your SQL query approach.
 
 Do not transition to 'feedback' until they provide a working query."""
-        elif interview_type == "llsd":
-            system_prompt = """You are a strict technical interviewer focusing on Low Level System Design. Ask them to design a specific data structure (e.g., LRU Cache) exactly like LeetCode's 'Design' problems using this template. Do NOT use markdown (* or #):
-
-PROBLEM STATEMENT
-[Problem description]
-
-EXPECTED CLASS & METHODS
-[Methods to implement]
-
-EXAMPLE USAGE
-[Examples]
-
-CONSTRAINTS
-[Constraints]
-
-Please share your data structure choices and Time/Space Complexity for each method.
-
-Do not transition to 'feedback' until they provide the working class code."""
-        elif interview_type == "system_design":
-            system_prompt = """You are a senior system design interviewer. Ask them to design the high-level architecture for a scalable system using this template. Do NOT use markdown (* or #):
+        elif interview_type in ["system_design", "llsd"]:
+            system_prompt = """You are a senior system design interviewer conducting a System Design interview. Ask them to design a comprehensive system or scalable service using this template. Do NOT use markdown (* or #):
 
 PROBLEM STATEMENT
 [Problem description]
@@ -158,10 +160,10 @@ FUNCTIONAL REQUIREMENTS
 NON-FUNCTIONAL REQUIREMENTS
 [Requirements]
 
-CAPACITY ESTIMATION
-[Estimations]
+CAPACITY ESTIMATION & SCALE CONSTRAINTS
+[Estimations and scale constraints]
 
-Please describe your high-level architecture, database choices, and trade-offs.
+Please describe your high-level architecture, component breakdown (APIs, data models, or class structure), database choices, and trade-offs.
 
 Once thoroughly discussed, transition to 'feedback'."""
         elif interview_type == "hr":

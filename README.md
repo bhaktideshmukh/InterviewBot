@@ -1,57 +1,135 @@
-# 🚀 InterviewBot - AI-Powered Interview Simulator
+# 🚀 InterviewBot - AI-Powered Technical & Behavioral Interview Simulator
 
-InterviewBot is a full-stack, AI-driven interview simulation platform designed to help candidates prepare for both behavioral and technical interviews. Using advanced Agentic AI workflows and Retrieval-Augmented Generation (RAG), the bot contextualizes interviews based on a user's actual uploaded resume and provides a live coding environment to evaluate Data Structures and Algorithms (DSA) solutions.
+**InterviewBot** is an agentic, full-stack interview preparation platform designed to simulate realistic technical and behavioral interviews. Powered by **LangGraph**, **Google Gemini**, and a **Retrieval-Augmented Generation (RAG)** pipeline, InterviewBot challenges candidates with conceptual depth, evaluates time/space complexities, verifies live submissions on **LeetCode**, and provides tailored questions based on your uploaded resume.
 
-## ✨ Features
+---
 
-- **State-Driven AI Agent:** Utilizes LangGraph to manage dynamic interview states (Greeting ➔ Technical Assessment ➔ Feedback), ensuring a structured and hallucination-free interview flow.
-- **Resume-Aware RAG Pipeline:** Upload a PDF resume to instantly generate vector embeddings via Google Gemini. The system queries a local Qdrant Vector Database to tailor interview questions specifically to your past projects and skills.
-- **Live Code Execution Engine:** Includes an integrated Monaco Editor (Web IDE) that allows candidates to write and execute code in Python, JavaScript, Java, and C++ securely via a backend `subprocess` execution engine.
-- **Strict Output Parsing:** Uses Pydantic to enforce strict JSON outputs from the LLM, enabling flawless routing logic and API reliability.
-- **Historical Dashboard:** Logs interview transcripts and scores to a PostgreSQL database (via Supabase), allowing users to review past performances.
+## ✨ Key Features
+
+- **🧠 State-Driven AI Agent (LangGraph):** Orchestrates dynamic interview stages (`greeting` ➔ `technical assessment` ➔ `feedback & score`) using structured output parsing with Pydantic for deterministic routing and zero hallucinations.
+- **💻 Grind 75 & Live LeetCode Verification:** 
+  - Randomly selects problems from the renowned **Grind 75** curriculum.
+  - Requires candidates to discuss intuition, edge cases, and Time & Space Complexities before coding.
+  - Live LeetCode verification via LeetCode's GraphQL API, checking for an **Accepted** submission within the last 1 hour under the candidate's username.
+- **📄 Resume-Aware RAG Pipeline:** Upload your PDF resume to generate dense embeddings using `gemini-embedding-2` stored in a local **Qdrant Vector Database**. The bot asks personalized, deep-dive questions targeting your actual projects, tech stacks, and career history.
+- **🏗️ Unified System Design Track:** Seamlessly combines high-level architecture, capacity estimations, functional/non-functional requirements, API design, and component-level trade-offs into a single comprehensive interview module.
+- **🛟 "Escape Hatch" Unstuck Mechanism:** If you are stuck or ask to give up, the AI interviewer provides complete optimal solutions, code/architectural diagrams, and concludes with structured scoring.
+- **⚡ Zero-Downtime Failover Chain:** Built with `gemini-3.8-flash` as primary and automated fallback to `gemini-3.6-flash`.
+- **🔑 Bring Your Own Key (BYOK):** Allows users to supply their own free Gemini API Key (stored 100% locally in browser memory) to avoid shared free tier quotas.
+- **📊 Performance Dashboard & Long-Term Memory:** All interview transcripts, scores out of 10, strengths, and areas of improvement are persisted to a PostgreSQL database (Supabase) via LangGraph connection pooling.
+
+---
+
+## 🎯 Supported Interview Tracks
+
+| Track | Description |
+|---|---|
+| **💻 Data Structures & Algorithms** | Random Grind 75 problems, complexity analysis, edge cases, and live LeetCode verification. |
+| **🏗️ System Design** | Scalable architectures, throughput/storage estimations, microservices, database choices, and trade-offs. |
+| **🗄️ SQL & Databases** | Advanced query design, schema modeling, joins, window functions, and indexing strategies. |
+| **☕ OOPs Concepts** | Core object-oriented principles, design patterns, polymorphism, and class modeling. |
+| **🤝 HR & Behavioral** | Situational and leadership questions evaluated against the structured **STAR** method. |
+| **📄 Resume Based** | Deep contextual interview based on projects, skills, and experience extracted from your uploaded PDF resume. |
+
+---
 
 ## 🛠️ Tech Stack
 
 ### **Frontend**
-- **Framework:** Next.js, React.js
-- **Styling:** Tailwind CSS
-- **Editor:** Monaco Editor (`@monaco-editor/react`)
+- **Framework:** Next.js 15 (React 19, TypeScript)
+- **Styling:** Modern Vanilla CSS Modules (Glassmorphism, curated dark mode, responsive layout)
+- **Storage:** LocalStorage for client-side thread management and BYOK API keys
 
-### **Backend & AI**
-- **Server:** FastAPI (Python)
-- **AI/LLM:** Google Gemini API, LangChain, LangGraph
-- **Vector Database:** Qdrant
-- **Relational Database:** PostgreSQL (Supabase)
+### **Backend & AI Architecture**
+- **Web Framework:** FastAPI (Python 3.10+)
+- **Agent Orchestration:** LangGraph (StateGraph, RunnableConfig)
+- **LLM / AI:** Google Gemini (`gemini-3.8-flash` with failover to `gemini-3.6-flash`), LangChain Google GenAI
+- **Embeddings & Vector Store:** Google Generative AI Embeddings (`models/gemini-embedding-2`), Qdrant
+- **State Checkpointing & Storage:** Supabase (PostgreSQL) with `psycopg_pool.ConnectionPool`
+- **Verification Engine:** LeetCode GraphQL API integration for real-time submission verification
 
-## ⚙️ Architecture Highlights
-1. **Frontend-Backend Decoupling:** Next.js handles the client-side UI and IDE, while FastAPI manages CPU-heavy tasks like code compilation and vector generation.
-2. **Memory Persistence:** Implements LangGraph's `MemorySaver` to retain conversational context across long interview sessions.
-3. **Secure Code Execution:** User-submitted code is isolated into temporary files and executed with strict timeouts to prevent infinite loops and server crashes.
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
-- Python (3.10+)
-- PostgreSQL Database URL (Supabase)
-- Google Gemini API Key
+- **Node.js** (v18+)
+- **Python** (3.10+)
+- **Google Gemini API Key** ([Get free key here](https://aistudio.google.com/app/apikey))
+- **PostgreSQL Database** (e.g., free tier on [Supabase](https://supabase.com))
+
+---
 
 ### Backend Setup
-1. Navigate to the backend folder: `cd backend`
-2. Create a virtual environment: `python -m venv venv`
-3. Activate the environment: `source venv/bin/activate` (Windows: `venv\Scripts\activate`)
-4. Install dependencies: `pip install -r requirements.txt`
-5. Create a `.env` file and add your keys:
+
+1. **Navigate to the backend directory:**
+   ```bash
+   cd backend
+   ```
+
+2. **Create and activate a virtual environment:**
+   ```bash
+   python -m venv venv
+   # On Windows:
+   .\venv\Scripts\activate
+   # On macOS/Linux:
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables:**
+   Create a `.env` file in the `backend/` directory:
    ```env
-   GEMINI_API_KEY=your_api_key_here
-   DATABASE_URL=your_postgres_url
-6. Start the FastAPI server: uvicorn main:app --reload
+   GEMINI_API_KEY=your_gemini_api_key
+   DATABASE_URL=postgresql://postgres:your_password@your_supabase_host:5432/postgres
+   ```
+
+5. **Start the FastAPI server:**
+   ```bash
+   uvicorn main:app --reload --port 8000
+   ```
+   Backend will be running at `http://localhost:8000`.
+
+---
 
 ### Frontend Setup
-- Navigate to the frontend folder: cd frontend
-- Install dependencies: npm install
-- Start the Next.js development server: npm run dev
-- Open http://localhost:3000 in your browser.
 
-### 👨‍💻 Author
-Built by Bhakti Deshmukh
+1. **Navigate to the frontend directory:**
+   ```bash
+   cd frontend
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Launch the application:**
+   Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## 📖 How to Use
+
+1. **Set API Key:** Click **⚙️ API Key** in the sidebar to add your Gemini API key.
+2. **Pick a Track:** Choose your interview type from the sidebar dropdown (DSA, System Design, SQL, OOPs, HR, or Resume-based).
+3. **Start Interview:** Click **+ New Chat** to begin. The AI interviewer will greet you and guide you through the session.
+4. **Solve & Verify (DSA):**
+   - Discuss your approach and time/space complexities first in chat.
+   - Click **🚀 Solve on LeetCode** to solve the problem.
+   - Enter your LeetCode username and click **Verify Acceptance** to verify your recent submission.
+5. **View Reports:** Once complete, check the **📊 Dashboard** to view your final scores and AI-generated performance breakdown.
+
+---
+
+## 👨‍💻 Author
+Built by **Bhakti Deshmukh**

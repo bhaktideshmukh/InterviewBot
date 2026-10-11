@@ -57,12 +57,18 @@ def chat(request: ChatRequest, x_gemini_key: str = Header(None)):
         # The last message is the AI's response.
         ai_response = output_state["messages"][-1].content
         dsa_problem = output_state.get("dsa_problem") or {}
-        
+        stage = output_state.get("stage", "greeting")
+
+        # Only return LeetCode problem details once the problem has been introduced
+        # (in technical stage, feedback stage, or when the LeetCode link is in the response)
+        show_problem = (stage in ["technical", "feedback", "completed"]) or ("leetcode.com/problems/" in ai_response)
+
         return {
             "reply": ai_response,
-            "leetcode_url": dsa_problem.get("url"),
-            "leetcode_slug": dsa_problem.get("slug"),
-            "leetcode_title": dsa_problem.get("title"),
+            "stage": stage,
+            "leetcode_url": dsa_problem.get("url") if show_problem else None,
+            "leetcode_slug": dsa_problem.get("slug") if show_problem else None,
+            "leetcode_title": dsa_problem.get("title") if show_problem else None,
         }
     except Exception as e:
         error_msg = str(e)

@@ -118,10 +118,10 @@ export default function Home() {
     if (saved) {
       const parsed: Message[] = JSON.parse(saved);
       setMessages(parsed);
-      let verified = false;
+      let verified = localStorage.getItem(`lc_verified_${currentThreadId}`) === "true";
       for (const m of parsed) {
         if (m.role === "bot") extractLeetCode(m.content);
-        if (m.role === "user" && m.content.toLowerCase().includes("accepted on leetcode")) {
+        if (m.role === "user" && (m.content.toLowerCase().includes("accepted on leetcode") || m.content.toLowerCase().includes("i have solved the problem on leetcode"))) {
           verified = true;
         }
       }
@@ -217,6 +217,7 @@ export default function Home() {
       setLcVerifyResult(data);
       if (data.accepted) {
         setIsLcVerified(true);
+        if (currentThreadId) localStorage.setItem(`lc_verified_${currentThreadId}`, "true");
         setInput(`My solution for ${leetcodeSlug || "the problem"} has been verified and Accepted on LeetCode! Here is my approach and time/space complexity: `);
       }
     } catch {
@@ -369,8 +370,7 @@ export default function Home() {
                <option value="" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Type of interview</option>
                <option value="dsa" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Data structures and algorithms</option>
                <option value="sql" style={{ backgroundColor: "#000000", color: "#ffffff" }}>SQL & Databases</option>
-               <option value="llsd" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Low Level System Design</option>
-               <option value="system_design" style={{ backgroundColor: "#000000", color: "#ffffff" }}>High Level System Design</option>
+               <option value="system_design" style={{ backgroundColor: "#000000", color: "#ffffff" }}>System Design</option>
                <option value="oops" style={{ backgroundColor: "#000000", color: "#ffffff" }}>OOPs Concepts</option>
                <option value="hr" style={{ backgroundColor: "#000000", color: "#ffffff" }}>HR & Behavioral</option>
                <option value="resume" style={{ backgroundColor: "#000000", color: "#ffffff" }}>Resume based</option>
@@ -522,6 +522,7 @@ export default function Home() {
                   type="button"
                   onClick={() => {
                     setIsLcVerified(true);
+                    if (currentThreadId) localStorage.setItem(`lc_verified_${currentThreadId}`, "true");
                     setInput("I have solved the problem on LeetCode and it was Accepted! My approach and complexity: ");
                   }}
                   style={{
@@ -631,37 +632,46 @@ export default function Home() {
                <button onClick={() => setShowHelpModal(false)} style={{ background: "transparent", color: "rgba(255,255,255,0.5)", border: "none", fontSize: "28px", cursor: "pointer" }}>&times;</button>
              </div>
              
-             <div style={{ display: "flex", flexDirection: "column", gap: "20px", fontSize: "15px", lineHeight: "1.6", color: "rgba(255,255,255,0.8)" }}>
-               <div>
-                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>1. Resume Based Interview</strong>
-                 Select <strong>Resume based</strong> from the interview type dropdown. You will be prompted to upload your PDF resume directly in the chat. The bot will read your resume and ask highly personalized questions based on your skills, experience, and projects.
-               </div>
-               
-               <div>
-                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>2. Choosing a Topic</strong>
-                 Use the dropdown in the top right to select your interview type (DSA, System Design, OOPs, HR). Click <strong>+ New Chat</strong> to start a completely fresh session. All sessions are saved in the sidebar.
-               </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "18px", fontSize: "14px", lineHeight: "1.6", color: "rgba(255,255,255,0.85)" }}>
+                <div>
+                  <strong style={{ color: "#60a5fa", fontSize: "15px", display: "block", marginBottom: "4px" }}>1. Choosing Your Interview Track</strong>
+                  Use the dropdown in the sidebar to pick your target interview track:
+                  <ul style={{ marginTop: "6px", paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <li><strong>Data Structures & Algorithms:</strong> Randomly selects curated problems from the Grind 75 curriculum with direct LeetCode integration.</li>
+                    <li><strong>System Design:</strong> Architecture, functional & non-functional requirements, capacity estimation, and component trade-offs.</li>
+                    <li><strong>SQL & Databases:</strong> Schema design, query optimization, joins, indexing, and complex data retrieval.</li>
+                    <li><strong>OOPs Concepts:</strong> Core object-oriented principles, design patterns, and real-world class design.</li>
+                    <li><strong>HR & Behavioral:</strong> Leadership and situational questions evaluated using the structured STAR method.</li>
+                    <li><strong>Resume Based:</strong> Upload your PDF resume. The AI indexes your experience using vector RAG to ask targeted questions about your past projects and technical skills.</li>
+                  </ul>
+                </div>
 
-               <div>
-                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>3. DSA Interview (LeetCode)</strong>
-                 When the bot gives you a DSA problem, open the <strong>🔗 LeetCode</strong> link to read the details. Discuss your approaches and time/space complexities with the bot first in the chat, and once agreed, code and verify your solution on LeetCode!
-               </div>
+                <div>
+                  <strong style={{ color: "#f89f1b", fontSize: "15px", display: "block", marginBottom: "4px" }}>2. DSA & LeetCode Live Verification</strong>
+                  In DSA rounds:
+                  <ul style={{ marginTop: "6px", paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <li>First, discuss your intuition, edge cases, and Time & Space Complexities with the interviewer in chat.</li>
+                    <li>Click <strong>🚀 Solve on LeetCode</strong> to open the exact problem on LeetCode.</li>
+                    <li><strong>Live Verification:</strong> Enter your LeetCode username and click <strong>Verify Acceptance</strong>. Our backend verifies your accepted submission in real-time (submitted within the last 1 hour) via LeetCode's public GraphQL API, or click <strong>I've Solved It 👍</strong>.</li>
+                    <li>Once verified, the problem banner is cleanly dismissed so you can continue the debrief!</li>
+                  </ul>
+                </div>
 
-               <div>
-                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>4. The "Escape Hatch" (Getting Unstuck)</strong>
-                 If you are completely stuck, simply type <code style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: "4px", color: "#f87171" }}>"I give up"</code> or <code style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: "4px", color: "#f87171" }}>"Please provide the solution"</code>. The bot will instantly end the interview and provide:
-                 <ul style={{ marginTop: "8px", paddingLeft: "24px" }}>
-                   <li><strong>DSA/SQL:</strong> The optimal approach, Time/Space Complexity, and full Code.</li>
-                   <li><strong>System Design/OOPs:</strong> A complete architectural breakdown and Class Design.</li>
-                   <li><strong>HR:</strong> A perfect example using the STAR Method.</li>
-                 </ul>
-               </div>
+                <div>
+                  <strong style={{ color: "#ef4444", fontSize: "15px", display: "block", marginBottom: "4px" }}>3. The "Escape Hatch" (Getting Unstuck)</strong>
+                  If you are completely stuck, simply type <code style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: "4px", color: "#f87171" }}>"I don't know"</code>, <code style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: "4px", color: "#f87171" }}>"I give up"</code>, or <code style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: "4px", color: "#f87171" }}>"Please provide the solution"</code>. The bot will immediately provide the optimal solution with code/architecture and generate your final evaluation.
+                </div>
 
-               <div>
-                 <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>5. Final Score & Dashboard</strong>
-                 When an interview successfully concludes (or when you use the escape hatch), the AI will automatically generate a final score out of 10 and a feedback summary. This is permanently saved. Click the <strong>📊 Dashboard</strong> button in the left sidebar to review your past performances!
-               </div>
-             </div>
+                <div>
+                  <strong style={{ color: "#4ade80", fontSize: "15px", display: "block", marginBottom: "4px" }}>4. Evaluation & Dashboard</strong>
+                  When an interview finishes, the AI provides a comprehensive score out of 10, key strengths, and areas for improvement. Results are saved to Supabase PostgreSQL. View all past reports anytime by clicking <strong>📊 Dashboard</strong> in the sidebar.
+                </div>
+
+                <div>
+                  <strong style={{ color: "#a78bfa", fontSize: "15px", display: "block", marginBottom: "4px" }}>5. Gemini API Key & Zero Downtime</strong>
+                  Bring your own free Gemini API key using the <strong>⚙️ API Key</strong> button in the sidebar (stored 100% locally in your browser) to prevent shared rate limits. The backend runs on <code>gemini-3.8-flash</code> with automated failover to <code>gemini-3.6-flash</code>.
+                </div>
+              </div>
              
              <div style={{ marginTop: "32px", textAlign: "right" }}>
                <button onClick={() => setShowHelpModal(false)} style={{ background: "#4f46e5", color: "white", padding: "10px 24px", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "bold" }}>Got it!</button>

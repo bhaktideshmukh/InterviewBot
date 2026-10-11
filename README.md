@@ -14,7 +14,7 @@
 - **📄 Resume-Aware RAG Pipeline:** Upload your PDF resume to generate dense embeddings using `gemini-embedding-2` stored in a local **Qdrant Vector Database**. The bot asks personalized, deep-dive questions targeting your actual projects, tech stacks, and career history.
 - **🏗️ Unified System Design Track:** Seamlessly combines high-level architecture, capacity estimations, functional/non-functional requirements, API design, and component-level trade-offs into a single comprehensive interview module.
 - **🛟 "Escape Hatch" Unstuck Mechanism:** If you are stuck or ask to give up, the AI interviewer provides complete optimal solutions, code/architectural diagrams, and concludes with structured scoring.
-- **⚡ Zero-Downtime Failover Chain:** Built with `gemini-3.8-flash` as primary and automated fallback to `gemini-3.6-flash`.
+- **⚡ Zero-Downtime Failover Chain:** High-throughput `gemini-3.5-flash-lite` (~30 RPM) as primary with automated fallback to `gemini-3.8-flash`.
 - **🔑 Bring Your Own Key (BYOK):** Allows users to supply their own free Gemini API Key (stored 100% locally in browser memory) to avoid shared free tier quotas.
 - **📊 Performance Dashboard & Long-Term Memory:** All interview transcripts, scores out of 10, strengths, and areas of improvement are persisted to a PostgreSQL database (Supabase) via LangGraph connection pooling.
 
@@ -43,7 +43,7 @@
 ### **Backend & AI Architecture**
 - **Web Framework:** FastAPI (Python 3.10+)
 - **Agent Orchestration:** LangGraph (StateGraph, RunnableConfig)
-- **LLM / AI:** Google Gemini (`gemini-3.8-flash` with failover to `gemini-3.6-flash`), LangChain Google GenAI
+- **LLM / AI:** Google Gemini (`gemini-3.5-flash-lite` with failover to `gemini-3.8-flash`), LangChain Google GenAI
 - **Embeddings & Vector Store:** Google Generative AI Embeddings (`models/gemini-embedding-2`), Qdrant
 - **State Checkpointing & Storage:** Supabase (PostgreSQL) with `psycopg_pool.ConnectionPool`
 - **Verification Engine:** LeetCode GraphQL API integration for real-time submission verification

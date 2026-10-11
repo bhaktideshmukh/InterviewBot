@@ -60,14 +60,14 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     if interview_type == "dsa" and not dsa_problem:
         dsa_problem = get_random_grind75_problem()
 
-    # Primary model (recommended by Google API) with automatic failover fallback
+    # Primary high-throughput model (30 RPM on Free Tier) with automatic failover fallback
     llm_primary = ChatGoogleGenerativeAI(
-        model="gemini-3.8-flash",
+        model="gemini-3.5-flash-lite",
         google_api_key=api_key,
         max_retries=2
     )
     llm_fallback = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash",
+        model="gemini-3.8-flash",
         google_api_key=api_key,
         max_retries=2
     )
@@ -84,7 +84,15 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
 
     if current_stage == "greeting":
         if interview_type == "resume":
-            system_prompt = "You are an expert AI interviewer. You have been given the candidate's resume. Greet them warmly, briefly acknowledge you have read their resume, highlight one or two things you noticed (like a specific skill or project), and ask if they are ready to begin a resume-based interview."
+            system_prompt = """You are an expert AI interviewer. You have been given the candidate's resume.
+RULES:
+1. If the candidate has NOT yet confirmed they are ready (has not said 'begin', 'start', etc.):
+   Greet them warmly, briefly acknowledge you have read their resume, highlight one or two things you noticed (like a specific skill or project), and tell them to respond 'begin' when they are ready to start.
+   Keep next_stage as 'greeting'.
+
+2. If the candidate responds 'begin' or confirms readiness (e.g., 'begin', 'start', 'ready', 'yes', 'lets begin'):
+   You MUST set next_stage to 'technical'.
+   Immediately ask your first targeted, specific technical question about their resume."""
         elif interview_type == "dsa":
             system_prompt = f"""You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview.
 
@@ -96,10 +104,10 @@ ASSIGNED PROBLEM FOR THIS SESSION:
 SESSION STAGES & RULES:
 1. GREETING / INITIAL INTRO:
    - If this is the start of the conversation and the candidate has NOT yet confirmed they are ready:
-     Warmly greet the candidate, tell them that today's question will be selected from the renowned Grind 75 curriculum, and that you will first discuss the conceptual approach and time/space complexities together right here in chat before coding on LeetCode. Ask them if they are ready to begin!
+     Warmly greet the candidate, tell them that today's question will be selected from the renowned Grind 75 curriculum, and that you will first discuss the conceptual approach and time/space complexities together right here in chat before coding on LeetCode. Ask them to respond 'begin' to start!
      Keep next_stage as 'greeting'.
 
-2. CANDIDATE CONFIRMED READINESS (e.g., they said "Lets begin", "Ready", "Yes", "Sure", "Start", "I am ready", "Let's do it", etc.):
+2. CANDIDATE CONFIRMED READINESS (e.g., they said "begin", "lets begin", "ready", "yes", "sure", "start", "i am ready", etc.):
    - You MUST set next_stage to 'technical'.
    - You MUST announce the assigned problem using EXACTLY this format:
      "Awesome, let's dive right in! We have picked the '{prob_title}' ({prob_diff}) question for you!
@@ -109,7 +117,17 @@ Please open the LeetCode link to review the problem. Before writing any code, le
    - CRITICAL CONSISTENCY RULE: The assigned problem is '{prob_title}'. NEVER mention or substitute 'Two Sum' unless the assigned problem is '{prob_title}'.
    - CRITICAL RULE: DO NOT copy or dump the full problem description, test cases, or constraints into the chat. Only share the title, difficulty, and LeetCode link."""
         else:
-            system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate and ask if they are ready to begin the {interview_type} round."
+            type_label = interview_type.replace("_", " ").title()
+            system_prompt = f"""You are an expert technical interviewer conducting a {type_label} interview.
+
+RULES:
+1. If the candidate has NOT yet confirmed they are ready (has not said 'begin', 'start', etc.):
+   Greet them warmly, tell them you will be conducting their {type_label} interview, and ask them to respond 'begin' to start.
+   Keep next_stage as 'greeting'.
+
+2. If the candidate responds 'begin' or confirms readiness (e.g. 'begin', 'lets begin', 'start', 'ready', 'yes', 'sure'):
+   You MUST set next_stage to 'technical'.
+   Transition immediately into the interview and present your first problem/question for the {type_label} round."""
     elif current_stage == "technical":
         if interview_type == "dsa":
             system_prompt = f"""You are a senior technical interviewer conducting a Data Structures & Algorithms interview.

@@ -103,6 +103,36 @@ export default function Home() {
 
   }, []);
 
+  const getInterviewTypeName = (type: string): string => {
+    switch (type) {
+      case "dsa":
+        return "Data Structures and Algorithms";
+      case "system_design":
+        return "System Design";
+      case "sql":
+        return "SQL & Databases";
+      case "oops":
+        return "OOPs Concepts";
+      case "hr":
+        return "HR & Behavioral";
+      case "resume":
+        return "Resume Based";
+      default:
+        return type ? type.replace(/_/g, " ") : "";
+    }
+  };
+
+  const getGreetingMessage = (type: string): string => {
+    if (!type) {
+      return "Hello! I am your AI Interviewer. Please select an interview type from the sidebar to get started.";
+    }
+    const typeName = getInterviewTypeName(type);
+    if (type === "resume") {
+      return `Hello! I am your AI Interviewer. You have selected '${typeName}'. Please upload your resume in PDF format below to begin.`;
+    }
+    return `Hello! I am your AI Interviewer. You have selected '${typeName}'. Let's start with that. Respond 'begin' to start the interview.`;
+  };
+
   const extractLeetCode = (text: string) => {
     const match = text.match(/https:\/\/leetcode\.com\/problems\/([a-zA-Z0-9_-]+)/i);
     if (match) {
@@ -281,9 +311,14 @@ export default function Home() {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    // Add user message to UI immediately
+    // Add user message to UI immediately (recording the greeting if this is the first message)
     const userMessage: Message = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => {
+      if (prev.length === 0) {
+        return [{ role: "bot", content: getGreetingMessage(interviewType) }, userMessage];
+      }
+      return [...prev, userMessage];
+    });
     setInput("");
     setIsLoading(true);
 
@@ -448,11 +483,11 @@ export default function Home() {
             </div>
           )}
 
-          {/* Default welcome message for non-resume types */}
-          {interviewType !== "resume" && messages.length === 0 && (
+          {/* Automatic greeting reflecting the selected interview type */}
+          {messages.length === 0 && interviewType !== "resume" && (
             <div className={styles.messageRow + " " + styles.bot}>
               <div className={styles.messageBubble}>
-                Hello! I am your AI Interviewer. Please tell me your name and what domain you would like to be interviewed on.
+                {getGreetingMessage(interviewType)}
               </div>
             </div>
           )}
@@ -613,7 +648,7 @@ export default function Home() {
             className={styles.input}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
+            placeholder={messages.length === 0 && interviewType && interviewType !== "resume" ? "Type 'begin' to start the interview..." : "Type your message..."}
             disabled={isLoading}
             autoFocus
           />
@@ -669,7 +704,7 @@ export default function Home() {
 
                 <div>
                   <strong style={{ color: "#a78bfa", fontSize: "15px", display: "block", marginBottom: "4px" }}>5. Gemini API Key & Zero Downtime</strong>
-                  Bring your own free Gemini API key using the <strong>⚙️ API Key</strong> button in the sidebar (stored 100% locally in your browser) to prevent shared rate limits. The backend runs on <code>gemini-3.8-flash</code> with automated failover to <code>gemini-3.6-flash</code>.
+                  Bring your own free Gemini API key using the <strong>⚙️ API Key</strong> button in the sidebar (stored 100% locally in your browser) to prevent shared rate limits. The backend runs on high-throughput <code>gemini-3.5-flash-lite</code> (~30 RPM) with automated failover to <code>gemini-3.8-flash</code>.
                 </div>
               </div>
              

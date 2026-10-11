@@ -56,13 +56,19 @@ def chat(request: ChatRequest, x_gemini_key: str = Header(None)):
         # The output_state contains the updated messages list. 
         # The last message is the AI's response.
         ai_response = output_state["messages"][-1].content
+        dsa_problem = output_state.get("dsa_problem") or {}
         
-        return {"reply": ai_response}
+        return {
+            "reply": ai_response,
+            "leetcode_url": dsa_problem.get("url"),
+            "leetcode_slug": dsa_problem.get("slug"),
+            "leetcode_title": dsa_problem.get("title"),
+        }
     except Exception as e:
         error_msg = str(e)
         if "429 RESOURCE_EXHAUSTED" in error_msg or "quota" in error_msg.lower():
             if "GenerateRequestsPerDay" in error_msg:
-                friendly_msg = "API Quota Exceeded. You have reached your DAILY Gemini Free Tier limit (20 requests/day). Your quota will reset at midnight Pacific Time."
+                friendly_msg = "API Quota Exceeded. You have reached your daily Gemini Free Tier limit. Your quota will reset at midnight Pacific Time, or you can supply an API key in the top settings."
             else:
                 import re
                 from datetime import datetime, timedelta
@@ -132,7 +138,7 @@ class LeetCodeVerifyRequest(BaseModel):
 
 @app.post("/api/verify-leetcode")
 def verify_leetcode(req: LeetCodeVerifyRequest):
-    import urllib.request, json, re
+    import urllib.request, json, re, time
     username = req.username.strip()
     if not username:
         raise HTTPException(status_code=400, detail="LeetCode username is required")
@@ -166,29 +172,42 @@ def verify_leetcode(req: LeetCodeVerifyRequest):
         if not target_slug and target_title:
             target_slug = re.sub(r"[^a-z0-9]+", "-", target_title).strip("-")
 
+        now = int(time.time())
+        ONE_HOUR = 3600
+        found_old_submission = None
+
         for sub in submissions:
             sub_slug = (sub.get("titleSlug") or "").lower()
             sub_title = (sub.get("title") or "").lower()
-            if target_slug and (target_slug == sub_slug or target_slug in sub_slug or sub_slug in target_slug):
-                return {
-                    "accepted": True,
-                    "title": sub.get("title"),
-                    "titleSlug": sub.get("titleSlug"),
-                    "timestamp": sub.get("timestamp"),
-                    "message": f"Verified! Solution for '{sub.get('title')}' was Accepted on LeetCode."
-                }
-            if target_title and (target_title == sub_title or target_title in sub_title):
-                return {
-                    "accepted": True,
-                    "title": sub.get("title"),
-                    "titleSlug": sub.get("titleSlug"),
-                    "timestamp": sub.get("timestamp"),
-                    "message": f"Verified! Solution for '{sub.get('title')}' was Accepted on LeetCode."
-                }
+            is_match = (
+                (target_slug and (target_slug == sub_slug or target_slug in sub_slug or sub_slug in target_slug)) or
+                (target_title and (target_title == sub_title or target_title in sub_title))
+            )
+            if is_match:
+                sub_ts = int(sub.get("timestamp") or 0)
+                time_diff = now - sub_ts
+                if time_diff <= ONE_HOUR:
+                    mins_ago = max(1, time_diff // 60)
+                    return {
+                        "accepted": True,
+                        "title": sub.get("title"),
+                        "titleSlug": sub.get("titleSlug"),
+                        "timestamp": sub.get("timestamp"),
+                        "message": f"Verified! Solution for '{sub.get('title')}' was Accepted on LeetCode ({mins_ago} min{'s' if mins_ago > 1 else ''} ago)."
+                    }
+                else:
+                    hours_ago = round(time_diff / 3600, 1)
+                    found_old_submission = f"Found an accepted submission for '{sub.get('title')}', but it was submitted {hours_ago} hours ago. Please submit a fresh Accepted solution on LeetCode during this interview session (within the last 1 hour) to verify."
+
+        if found_old_submission:
+            return {
+                "accepted": False,
+                "message": found_old_submission
+            }
 
         return {
             "accepted": False,
-            "message": f"No recent accepted submission found for '{req.problem_slug or req.problem_title}' under username '{username}'. Please submit your solution on LeetCode and click verify."
+            "message": f"No recent accepted submission found for '{req.problem_slug or req.problem_title}' under username '{username}' within the last hour. Please solve and submit on LeetCode, then click verify."
         }
     except Exception as e:
         return {

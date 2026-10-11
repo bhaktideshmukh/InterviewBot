@@ -74,6 +74,8 @@ export default function Home() {
     let loadedSessions: ChatSession[] = [];
     if (savedSessions) {
       loadedSessions = JSON.parse(savedSessions);
+      // Clean up orphaned empty sessions
+      loadedSessions = loadedSessions.filter(s => s.type || (localStorage.getItem(s.id) && JSON.parse(localStorage.getItem(s.id) || "[]").length > 0));
     } else {
       // Migrate old chats if any
       const dsaChat = localStorage.getItem(`chat_${id}_dsa`);
@@ -91,7 +93,7 @@ export default function Home() {
     
     setSessions(loadedSessions);
     setCurrentThreadId(loadedSessions[0].id);
-    setInterviewType(""); // Always start with placeholder, don't restore old type
+    setInterviewType(loadedSessions[0].type || "");
 
     const savedKey = localStorage.getItem("gemini_api_key");
     if (savedKey) setUserApiKey(savedKey);
@@ -139,13 +141,50 @@ export default function Home() {
     }
   }, [messages]);
 
+  const handleSelectInterviewType = (selectedType: string) => {
+    if (!selectedType) return;
+    setInterviewType(selectedType);
+
+    // If current thread has no messages, update this thread in-place instead of creating a wasted new chat!
+    if (messages.length === 0 && currentThreadId) {
+      setSessions(prev => {
+        const updated = prev.map(s => s.id === currentThreadId ? { ...s, type: selectedType } : s);
+        localStorage.setItem(`sessions_${userId}`, JSON.stringify(updated));
+        return updated;
+      });
+      return;
+    }
+
+    // Only start a brand new chat if the current chat already had messages in it
+    startNewChat(selectedType);
+  };
+
   const startNewChat = (typeOverride?: string) => {
-    const typeToUse = typeOverride !== undefined ? typeOverride : interviewType;
-    if (typeOverride !== undefined) setInterviewType(typeOverride);
+    // If the current chat is already fresh and empty, just update its type without creating another wasted thread
+    if (messages.length === 0 && currentThreadId) {
+      const typeToUse = typeOverride !== undefined ? typeOverride : "";
+      setInterviewType(typeToUse);
+      if (typeToUse) {
+        setSessions(prev => {
+          const updated = prev.map(s => s.id === currentThreadId ? { ...s, type: typeToUse } : s);
+          localStorage.setItem(`sessions_${userId}`, JSON.stringify(updated));
+          return updated;
+        });
+      }
+      setLeetcodeUrl("");
+      setLeetcodeSlug("");
+      setIsLcVerified(false);
+      setLcVerifyResult(null);
+      return;
+    }
+
+    const typeToUse = typeOverride !== undefined ? typeOverride : "";
+    setInterviewType(typeToUse);
     
     const newThreadId = userId + "_thread_" + Math.random().toString(36).substring(2, 10);
     const newSession = { id: newThreadId, type: typeToUse, date: new Date().toLocaleDateString() };
-    const updatedSessions = [newSession, ...sessions];
+    const cleanSessions = sessions.filter(s => s.type || (localStorage.getItem(s.id) && JSON.parse(localStorage.getItem(s.id) || "[]").length > 0));
+    const updatedSessions = [newSession, ...cleanSessions];
     setSessions(updatedSessions);
     localStorage.setItem(`sessions_${userId}`, JSON.stringify(updatedSessions));
     setCurrentThreadId(newThreadId);
@@ -277,8 +316,13 @@ export default function Home() {
       
       // Add AI response to UI
       setMessages((prev) => [...prev, { role: "bot", content: data.reply }]);
-      // Extract LeetCode URL from bot reply for the shortcut button
-      extractLeetCode(data.reply);
+      // Extract or set LeetCode URL from backend response
+      if (data.leetcode_url) {
+        setLeetcodeUrl(data.leetcode_url);
+        setLeetcodeSlug(data.leetcode_slug || "");
+      } else {
+        extractLeetCode(data.reply);
+      }
     } catch (error: any) {
       console.error(error);
       const errMsg = error.message === "Failed to fetch" 
@@ -302,7 +346,7 @@ export default function Home() {
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
              <select 
                value={interviewType}
-               onChange={(e) => startNewChat(e.target.value)}
+               onChange={(e) => handleSelectInterviewType(e.target.value)}
                style={{
                  backgroundColor: "#000000",
                  color: "#ffffff",
@@ -353,7 +397,7 @@ export default function Home() {
 
         <div style={{ fontSize: "12px", color: "#888", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "1px", fontWeight: "600" }}>Recent Interviews</div>
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
-           {sessions.map(s => (
+           {sessions.filter(s => s.type).map(s => (
               <div key={s.id} onClick={() => { setCurrentThreadId(s.id); setInterviewType(s.type); }} style={{ padding: "12px", background: currentThreadId === s.id ? "rgba(255,255,255,0.1)" : "transparent", borderRadius: "8px", cursor: "pointer", color: "white", fontSize: "14px", transition: "background 0.2s", display: "flex", flexDirection: "column", gap: "4px", border: "1px solid transparent", borderColor: currentThreadId === s.id ? "rgba(255,255,255,0.2)" : "transparent" }} onMouseEnter={e => { if (currentThreadId !== s.id) e.currentTarget.style.background="rgba(255,255,255,0.05)"; }} onMouseLeave={e => { if (currentThreadId !== s.id) e.currentTarget.style.background="transparent"; }}>
                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.type.toUpperCase()} Interview</span>
                  <span style={{ fontSize: "11px", color: "#aaa" }}>{s.date}</span>
@@ -423,8 +467,8 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* LeetCode Grind 75 Problem Banner — visible when problem is assigned */}
-        {interviewType === "dsa" && leetcodeUrl && (
+        {/* LeetCode Grind 75 Problem Banner — visible when problem is assigned, completely removed once verified or completed */}
+        {interviewType === "dsa" && leetcodeUrl && !isLcVerified && !messages.some(m => m.content.includes("Final Feedback & Score")) && (
           <div style={{
             background: "linear-gradient(135deg, rgba(248, 159, 27, 0.12), rgba(18, 18, 18, 0.95))",
             border: "1px solid rgba(248, 159, 27, 0.35)",
@@ -477,6 +521,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => {
+                    setIsLcVerified(true);
                     setInput("I have solved the problem on LeetCode and it was Accepted! My approach and complexity: ");
                   }}
                   style={{

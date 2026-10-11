@@ -30,7 +30,11 @@ load_dotenv()
 class InterviewResponse(BaseModel):
     reply_message: str = Field(description="The actual message you want to speak to the candidate.")
     next_stage: str = Field(
-        description="The stage of the interview. Choose 'greeting' if still introducing. Choose 'technical' when asking the DSA question or discussing the solution. Choose 'feedback' ONLY when the interview is over and you are giving the final score."
+        description="The stage of the interview. Choose 'greeting' if still introducing. Choose 'technical' when asking questions or discussing the solution. Choose 'feedback' ONLY when the interview is over and you are giving the final score."
+    )
+    final_feedback: str | None = Field(
+        default=None,
+        description="Provide ONLY when next_stage is 'feedback'. A detailed final evaluation of the candidate including a final score out of 10, along with their key strengths and areas of improvement."
     )
 
 # --- 2. THE STATE ---
@@ -39,7 +43,9 @@ class InterviewState(TypedDict):
     stage: str # Notice there is no 'add' reducer here, so it will get overwritten!
     interview_type: str
     api_key: str
+    dsa_problem: dict | None
 
+from grind75 import get_random_grind75_problem
 from langchain_core.runnables import RunnableConfig
 
 # --- 3. THE NODE ---
@@ -49,46 +55,61 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     api_key = state.get("api_key") or os.getenv("GEMINI_API_KEY")
     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
     resume_context = get_resume_context(thread_id, api_key) if interview_type == "resume" else ""
+    
+    dsa_problem = state.get("dsa_problem")
+    if interview_type == "dsa" and not dsa_problem:
+        dsa_problem = get_random_grind75_problem()
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash",
-        google_api_key=api_key
+    # High-quota primary model (1,500 RPD) with automatic failover fallback
+    llm_primary = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        google_api_key=api_key,
+        max_retries=2
     )
-    structured_llm = llm.with_structured_output(InterviewResponse)
+    llm_fallback = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        google_api_key=api_key,
+        max_retries=2
+    )
+    structured_primary = llm_primary.with_structured_output(InterviewResponse)
+    structured_fallback = llm_fallback.with_structured_output(InterviewResponse)
+    structured_llm = structured_primary.with_fallbacks([structured_fallback])
     
     if current_stage == "greeting":
         if interview_type == "resume":
             system_prompt = "You are an expert AI interviewer. You have been given the candidate's resume. Greet them warmly, briefly acknowledge you have read their resume, highlight one or two things you noticed (like a specific skill or project), and ask if they are ready to begin a resume-based interview."
         elif interview_type == "dsa":
-            system_prompt = "You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview. Warmly greet the candidate, tell them that today's question is selected from the renowned Grind 75 curriculum and that you will first discuss the approach and complexities together before coding on LeetCode. Ask them if they are ready to begin!"
+            system_prompt = "You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview. Warmly greet the candidate, tell them that today's question will be selected from the renowned Grind 75 curriculum and that you will first discuss the approach and complexities together before coding on LeetCode. Ask them if they are ready to begin!"
         else:
             system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate and ask if they are ready to begin the {interview_type} round."
     elif current_stage == "technical":
         if interview_type == "dsa":
-            system_prompt = """You are a senior technical interviewer conducting a Data Structures & Algorithms interview.
-You MUST pick a real coding question from the famous Grind 75 list (https://www.techinterviewhandbook.org/grind75/) such as Two Sum, Valid Parentheses, Merge Two Sorted Lists, Best Time to Buy and Sell Stock, Invert Binary Tree, Maximum Subarray, 3Sum, Binary Search, Longest Substring Without Repeating Characters, Coin Change, Course Schedule, or Number of Islands.
+            prob_title = dsa_problem.get("title", "Two Sum")
+            prob_diff = dsa_problem.get("difficulty", "Easy")
+            prob_topic = dsa_problem.get("topic", "Algorithms")
+            prob_url = dsa_problem.get("url", f"https://leetcode.com/problems/{dsa_problem.get('slug', 'two-sum')}/")
 
-When presenting the question to the candidate:
-- Do NOT dump the full problem description, example inputs/outputs, or constraints into the chat.
-- State clearly that this is the question picked for them (Title & Difficulty).
-- You MUST include the exact LeetCode problem URL in your reply so the candidate can read the full problem statement and test cases directly on LeetCode.
-- Keep the presentation clean and concise using this format:
+            system_prompt = f"""You are a senior technical interviewer conducting a Data Structures & Algorithms interview.
 
-SELECTED PROBLEM
-[Problem Title] ([Difficulty])
+ASSIGNED PROBLEM FOR THIS CANDIDATE:
+- Title: {prob_title} ({prob_diff})
+- Topic: {prob_topic}
+- LeetCode Link: {prob_url}
 
-LEETCODE LINK
-https://leetcode.com/problems/[problem-slug]/
-
-INSTRUCTIONS
-This is the question we picked for you! Please open the LeetCode link to read the full problem description and constraints.
-Before writing any code, let's first discuss your thought process, possible approaches (such as brute force vs optimal), and their Time & Space Complexities right here in the chat. Once we discuss and agree on the optimal approach, you can go ahead and code it on LeetCode!
+CRITICAL MANDATORY INSTRUCTIONS:
+1. When introducing the question to the candidate, you MUST announce the question and include the exact LeetCode URL:
+"We have picked the '{prob_title}' ({prob_diff}) question for you!
+LeetCode Link: {prob_url}"
+2. You MUST include the exact LeetCode URL ({prob_url}) in your reply. Do NOT omit it.
+3. DO NOT paste the full problem statement text, test cases, or constraints into the chat.
+4. Instruct the candidate:
+"Please open the LeetCode link to review the problem. Before writing any code, let's discuss your thought process, possible approaches (e.g., brute force vs optimal), and their Time & Space Complexities right here in the chat. What are your initial thoughts on solving this?"
 
 INTERVIEW DISCUSSION FLOW:
-1. First, prompt the candidate to share their approach and their Time & Space Complexities.
-2. Evaluate their explanation, ask probing questions, and give subtle hints if they are stuck or missing edge cases.
-3. Once the candidate explains a solid approach and correct complexities, encourage them to code and submit their solution on LeetCode (they can use the LeetCode button or verify their submission).
-4. Do not transition to the 'feedback' stage until they have thoroughly discussed their approach and complexities, and completed the coding problem."""
+- First, discuss candidate's proposed approaches and Time & Space Complexities.
+- Guide them with questions or subtle hints if their approach is suboptimal or incomplete.
+- Once they have explained the optimal approach and correct complexities, invite them to code and submit on LeetCode.
+- Do not transition to the 'feedback' stage until they have thoroughly discussed their approach and complexities, and completed the coding problem."""
         elif interview_type == "sql":
             system_prompt = """You are a strict technical interviewer. You MUST ask an advanced SQL query question using exactly the following template. Do NOT use markdown (* or #). Use exactly these headings:
 
@@ -188,22 +209,21 @@ Do not transition to 'feedback' until you have covered at least 3 distinct areas
     if resume_context:
         system_prompt += f"\n\nCandidate's Resume Context:\n{resume_context}"
 
+    if current_stage != "feedback":
+        system_prompt += "\n\nCRITICAL EVALUATION RULE: If you decide the interview is concluding (setting next_stage to 'feedback'), you MUST generate the candidate's detailed evaluation in the final_feedback field (including a final score out of 10, key strengths, and areas for improvement)."
+
     messages_to_send = [SystemMessage(content=system_prompt)] + state["messages"]
     
     print(f"\n--- [Backend] AI is analyzing the conversation (Current Stage: {current_stage}) ---")
     
-    # Call the LLM (it will return our InterviewResponse object)
+    # Call the LLM with fallback chain (returns our InterviewResponse object in a single pass)
     result = structured_llm.invoke(messages_to_send)
     
     print(f"--- [Backend] AI decided Next Stage should be: {result.next_stage} ---\n")
 
     if result.next_stage == "feedback" and current_stage != "feedback":
-        # Generate feedback immediately without waiting for user to type 'ok'
-        print("--- [Backend] Auto-generating feedback... ---")
-        from langchain_core.messages import HumanMessage
-        feedback_prompt = "SYSTEM OVERRIDE: The interview is now over. Please provide a detailed final evaluation of the candidate. You MUST include a final score out of 10, and a summary of their strengths and weaknesses based on this conversation."
-        feedback_msgs = messages_to_send + [AIMessage(content=result.reply_message), HumanMessage(content=feedback_prompt)]
-        feedback_result = structured_llm.invoke(feedback_msgs)
+        print("--- [Backend] Single-pass feedback generated (No second LLM call!) ---")
+        feedback_summary = (result.final_feedback or result.reply_message).strip()
         
         thread_id = config.get("configurable", {}).get("thread_id", "unknown")
         try:
@@ -212,17 +232,21 @@ Do not transition to 'feedback' until you have covered at least 3 distinct areas
                 with conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO interview_reports (thread_id, interview_type, feedback_summary) VALUES (%s, %s, %s)",
-                        (thread_id, interview_type, feedback_result.reply_message)
+                        (thread_id, interview_type, feedback_summary)
                     )
                 conn.commit()
             print("--- [Backend] Feedback saved to Dashboard! ---")
         except Exception as e:
             print("--- [Backend] Failed to save feedback to Dashboard:", e)
             
-        final_reply = result.reply_message + "\n\n---\n\n**Final Feedback & Score:**\n\n" + feedback_result.reply_message
+        final_reply = result.reply_message
+        if result.final_feedback and result.final_feedback.strip() not in result.reply_message:
+            final_reply += "\n\n---\n\n**Final Feedback & Score:**\n\n" + result.final_feedback.strip()
+
         return {
             "messages": [AIMessage(content=final_reply)], 
-            "stage": "completed"
+            "stage": "completed",
+            "dsa_problem": dsa_problem
         }
     
     # We convert the string reply back into an AIMessage
@@ -231,7 +255,8 @@ Do not transition to 'feedback' until you have covered at least 3 distinct areas
     # We return the new message AND the new stage!
     return {
         "messages": [ai_message], 
-        "stage": result.next_stage
+        "stage": result.next_stage,
+        "dsa_problem": dsa_problem
     }
 
 # --- 4. THE GRAPH ---

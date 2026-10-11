@@ -33,6 +33,61 @@
 
 ---
 
+## 📸 Screenshots & Application Preview
+
+### 1. Welcome & Interview Domain Selection
+When launching InterviewBot, select your desired interview track from the sidebar. The interviewer dynamically adapts its greeting to your chosen topic.
+
+![Welcome Screen](docs/screenshots/01-welcome-screen.png)
+
+---
+
+### 2. DSA Interview (Grind 75) & Live LeetCode Verification
+The AI randomly assigns a problem from the Grind 75 curriculum, prompts for complexity and conceptual intuition first, presents a direct LeetCode link, and verifies live submissions within 1 hour via GraphQL.
+
+| Assigned Problem & LeetCode Banner | Complexity Discussion & Approach Analysis |
+|:---:|:---:|
+| ![DSA Problem Assignment](docs/screenshots/04-dsa-interview-session.png) | ![Approach Discussion](docs/screenshots/05-approach-discussion.png) |
+
+#### Verified Acceptance & Final Evaluation (Score 10/10)
+Once the problem is solved and verified, the problem banner dismisses cleanly, and the AI produces a detailed performance breakdown and final score.
+
+![LeetCode Verification and Score](docs/screenshots/06-leetcode-verification-and-score.png)
+
+---
+
+### 3. Resume-Aware RAG Interview
+Upload your PDF resume to generate dense embeddings via `gemini-embedding-2` stored in Qdrant. The interviewer extracts your real-world experience to ask pointed architectural questions.
+
+| Resume Upload Screen | Contextual RAG Questioning |
+|:---:|:---:|
+| ![Resume Upload Screen](docs/screenshots/07-resume-upload-screen.png) | ![Resume RAG Interview](docs/screenshots/08-resume-rag-interview.png) |
+
+---
+
+### 4. Candidate Dashboard & Analytics
+Review your performance history, score progression charts across attempts, strengths, and areas for improvement stored permanently in Supabase PostgreSQL.
+
+![Interview Dashboard](docs/screenshots/09-interview-dashboard.png)
+
+---
+
+### 5. Escape Hatch & Getting Unstuck
+If a candidate gets stuck, typing *"I give up"* triggers the AI to provide the optimal solution (full code, STAR response, or architecture) along with constructive scoring.
+
+| HR Behavioral Escape Hatch (STAR Method) | In-App Interactive Guide |
+|:---:|:---:|
+| ![HR Escape Hatch](docs/screenshots/10-escape-hatch-behavioral.png) | ![How to Use Guide](docs/screenshots/03-how-to-use-guide.png) |
+
+---
+
+### 6. Bring Your Own Key (BYOK) Security
+Store your free Google Gemini API key securely in browser local storage for private, rate-limit-free interviews.
+
+![API Key Modal](docs/screenshots/02-api-key-modal.png)
+
+---
+
 ## 🛠️ Tech Stack
 
 ### **Frontend**

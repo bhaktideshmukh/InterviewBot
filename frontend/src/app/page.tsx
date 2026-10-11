@@ -47,14 +47,13 @@ export default function Home() {
   const [userApiKey, setUserApiKey] = useState("");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [leetcodeUrl, setLeetcodeUrl] = useState("");
   const [leetcodeSlug, setLeetcodeSlug] = useState("");
   const [leetcodeUsername, setLeetcodeUsername] = useState("");
   const [isVerifyingLc, setIsVerifyingLc] = useState(false);
+  const [isLcVerified, setIsLcVerified] = useState(false);
   const [lcVerifyResult, setLcVerifyResult] = useState<{ accepted?: boolean; message: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
   const activeThreadRef = useRef("");
 
   useEffect(() => {
@@ -100,44 +99,7 @@ export default function Home() {
     const savedLcUser = localStorage.getItem("leetcode_username");
     if (savedLcUser) setLeetcodeUsername(savedLcUser);
 
-    // Setup Web Speech API
-    if (typeof window !== "undefined" && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.onresult = (e: any) => {
-        const transcript = e.results[0][0].transcript;
-        setInput(prev => prev + (prev ? " " : "") + transcript);
-        setIsListening(false);
-      };
-      recognitionRef.current.onerror = () => setIsListening(false);
-      recognitionRef.current.onend = () => setIsListening(false);
-    }
   }, []);
-
-  const toggleListening = () => {
-    if (!recognitionRef.current) return alert("Microphone not supported in this browser.");
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
-      recognitionRef.current.start();
-      setIsListening(true);
-    }
-  };
-
-  const speakText = (text: string) => {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    
-    // Do not speak the final feedback summary because it's too long
-    if (text.includes("Final Feedback & Score")) return;
-    
-    const cleanText = text.replace(/[*#`_]/g, "");
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    window.speechSynthesis.speak(utterance);
-  };
 
   const extractLeetCode = (text: string) => {
     const match = text.match(/https:\/\/leetcode\.com\/problems\/([a-zA-Z0-9_-]+)/i);
@@ -154,13 +116,19 @@ export default function Home() {
     if (saved) {
       const parsed: Message[] = JSON.parse(saved);
       setMessages(parsed);
+      let verified = false;
       for (const m of parsed) {
         if (m.role === "bot") extractLeetCode(m.content);
+        if (m.role === "user" && m.content.toLowerCase().includes("accepted on leetcode")) {
+          verified = true;
+        }
       }
+      setIsLcVerified(verified);
     } else {
       setMessages([]);
       setLeetcodeUrl("");
       setLeetcodeSlug("");
+      setIsLcVerified(false);
     }
   }, [currentThreadId]);
 
@@ -184,6 +152,7 @@ export default function Home() {
     setMessages([]);
     setLeetcodeUrl("");
     setLeetcodeSlug("");
+    setIsLcVerified(false);
     setLcVerifyResult(null);
     setResumeUploaded(false); // Reset so upload prompt shows again for resume type
   };
@@ -208,6 +177,7 @@ export default function Home() {
       const data = await res.json();
       setLcVerifyResult(data);
       if (data.accepted) {
+        setIsLcVerified(true);
         setInput(`My solution for ${leetcodeSlug || "the problem"} has been verified and Accepted on LeetCode! Here is my approach and time/space complexity: `);
       }
     } catch {
@@ -256,7 +226,6 @@ export default function Home() {
         const data = await chatRes.json().catch(() => ({}));
         if (chatRes.ok) {
           setMessages(prev => [...prev, { role: "bot", content: data.reply }]);
-          speakText(data.reply);
         }
       } catch {}
       finally { setIsLoading(false); }
@@ -271,11 +240,6 @@ export default function Home() {
   const sendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
-
-    // Stop any ongoing speech when sending a new message
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
 
     // Add user message to UI immediately
     const userMessage: Message = { role: "user", content: input };
@@ -313,7 +277,6 @@ export default function Home() {
       
       // Add AI response to UI
       setMessages((prev) => [...prev, { role: "bot", content: data.reply }]);
-      speakText(data.reply);
       // Extract LeetCode URL from bot reply for the shortcut button
       extractLeetCode(data.reply);
     } catch (error: any) {
@@ -475,13 +438,18 @@ export default function Home() {
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "22px" }}>🟧</span>
+                <span style={{ fontSize: "22px" }}>{isLcVerified ? "✅" : "🟧"}</span>
                 <div>
-                  <div style={{ color: "#f89f1b", fontWeight: "bold", fontSize: "14px" }}>
+                  <div style={{ color: isLcVerified ? "#4ade80" : "#f89f1b", fontWeight: "bold", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
                     LeetCode Problem: {leetcodeSlug ? leetcodeSlug.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "Grind 75 Problem"}
+                    {isLcVerified && (
+                      <span style={{ background: "rgba(34, 197, 94, 0.2)", color: "#4ade80", fontSize: "11px", padding: "2px 8px", borderRadius: "10px", border: "1px solid rgba(34, 197, 94, 0.4)" }}>
+                        ✓ Accepted & Verified
+                      </span>
+                    )}
                   </div>
                   <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "12px" }}>
-                    Solve on LeetCode, then verify acceptance or discuss your complexity
+                    {isLcVerified ? "Solution verified! Continue discussing your approach and complexity with the interviewer." : "Read on LeetCode, discuss your approach & complexities here, then code!"}
                   </div>
                 </div>
               </div>
@@ -526,61 +494,63 @@ export default function Home() {
               </div>
             </div>
 
-            {/* LeetCode Verification Form */}
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              flexWrap: "wrap",
-              borderTop: "1px solid rgba(255,255,255,0.08)",
-              paddingTop: "8px"
-            }}>
-              <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.6)" }}>Verify LeetCode:</span>
-              <input
-                type="text"
-                placeholder="Your LeetCode username"
-                value={leetcodeUsername}
-                onChange={(e) => setLeetcodeUsername(e.target.value)}
-                style={{
-                  background: "#000",
-                  color: "#fff",
-                  border: "1px solid rgba(255,255,255,0.25)",
-                  borderRadius: "6px",
-                  padding: "5px 10px",
-                  fontSize: "12px",
-                  outline: "none",
-                  flex: "1",
-                  minWidth: "150px"
-                }}
-              />
-              <button
-                type="button"
-                onClick={verifyLeetCode}
-                disabled={isVerifyingLc}
-                style={{
-                  background: isVerifyingLc ? "#666" : "#22c55e",
-                  color: "#000",
-                  fontWeight: "bold",
-                  border: "none",
-                  borderRadius: "6px",
-                  padding: "6px 14px",
-                  cursor: isVerifyingLc ? "wait" : "pointer",
-                  fontSize: "12px"
-                }}
-              >
-                {isVerifyingLc ? "Checking..." : "Verify Acceptance"}
-              </button>
-              {lcVerifyResult && (
-                <span style={{
-                  fontSize: "12px",
-                  color: lcVerifyResult.accepted ? "#4ade80" : "#f87171",
-                  fontWeight: "500",
-                  marginLeft: "4px"
-                }}>
-                  {lcVerifyResult.message}
-                </span>
-              )}
-            </div>
+            {/* LeetCode Verification Form — eliminated once verified or after feedback */}
+            {!isLcVerified && !messages.some(m => m.content.includes("Final Feedback & Score")) && (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                flexWrap: "wrap",
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                paddingTop: "8px"
+              }}>
+                <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.6)" }}>Verify LeetCode:</span>
+                <input
+                  type="text"
+                  placeholder="Your LeetCode username"
+                  value={leetcodeUsername}
+                  onChange={(e) => setLeetcodeUsername(e.target.value)}
+                  style={{
+                    background: "#000",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    borderRadius: "6px",
+                    padding: "5px 10px",
+                    fontSize: "12px",
+                    outline: "none",
+                    flex: "1",
+                    minWidth: "150px"
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={verifyLeetCode}
+                  disabled={isVerifyingLc}
+                  style={{
+                    background: isVerifyingLc ? "#666" : "#22c55e",
+                    color: "#000",
+                    fontWeight: "bold",
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "6px 14px",
+                    cursor: isVerifyingLc ? "wait" : "pointer",
+                    fontSize: "12px"
+                  }}
+                >
+                  {isVerifyingLc ? "Checking..." : "Verify Acceptance"}
+                </button>
+                {lcVerifyResult && !lcVerifyResult.accepted && (
+                  <span style={{
+                    fontSize: "12px",
+                    color: "#f87171",
+                    fontWeight: "500",
+                    marginLeft: "4px"
+                  }}>
+                    {lcVerifyResult.message}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -592,9 +562,6 @@ export default function Home() {
               🔗 LeetCode
             </a>
           )}
-          <button type="button" onClick={toggleListening} className={styles.sendButton} style={{ background: isListening ? "#ef4444" : "rgba(255,255,255,0.1)", color: isListening ? "white" : "#ccc", padding: "0 16px", transition: "all 0.2s" }} title="Click to speak">
-            {isListening ? "🎙️ Listening..." : "🎤"}
-          </button>
           <input
             type="text"
             className={styles.input}
@@ -632,7 +599,7 @@ export default function Home() {
 
                <div>
                  <strong style={{ color: "#60a5fa", fontSize: "16px", display: "block", marginBottom: "4px" }}>3. DSA Interview (LeetCode)</strong>
-                 When the bot gives you a DSA problem, a <strong>🔗 LeetCode</strong> button will appear next to the chat input — click it to open the exact problem on LeetCode. Solve it there, then come back to discuss your approach and time/space complexity with the bot.
+                 When the bot gives you a DSA problem, open the <strong>🔗 LeetCode</strong> link to read the details. Discuss your approaches and time/space complexities with the bot first in the chat, and once agreed, code and verify your solution on LeetCode!
                </div>
 
                <div>

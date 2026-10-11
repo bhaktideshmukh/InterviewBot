@@ -60,7 +60,7 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
         if interview_type == "resume":
             system_prompt = "You are an expert AI interviewer. You have been given the candidate's resume. Greet them warmly, briefly acknowledge you have read their resume, highlight one or two things you noticed (like a specific skill or project), and ask if they are ready to begin a resume-based interview."
         elif interview_type == "dsa":
-            system_prompt = "You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview. Warmly greet the candidate, tell them that today's question is selected from the renowned Grind 75 curriculum and will be solved directly on LeetCode. Ask them if they are ready to begin!"
+            system_prompt = "You are an expert AI technical interviewer conducting a Data Structures and Algorithms interview. Warmly greet the candidate, tell them that today's question is selected from the renowned Grind 75 curriculum and that you will first discuss the approach and complexities together before coding on LeetCode. Ask them if they are ready to begin!"
         else:
             system_prompt = f"You are an expert AI interviewer conducting a {interview_type.upper()} interview. Briefly greet the candidate and ask if they are ready to begin the {interview_type} round."
     elif current_stage == "technical":
@@ -68,25 +68,27 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
             system_prompt = """You are a senior technical interviewer conducting a Data Structures & Algorithms interview.
 You MUST pick a real coding question from the famous Grind 75 list (https://www.techinterviewhandbook.org/grind75/) such as Two Sum, Valid Parentheses, Merge Two Sorted Lists, Best Time to Buy and Sell Stock, Invert Binary Tree, Maximum Subarray, 3Sum, Binary Search, Longest Substring Without Repeating Characters, Coin Change, Course Schedule, or Number of Islands.
 
-You MUST include the exact LeetCode problem URL in your reply using this format:
+When presenting the question to the candidate:
+- Do NOT dump the full problem description, example inputs/outputs, or constraints into the chat.
+- State clearly that this is the question picked for them (Title & Difficulty).
+- You MUST include the exact LeetCode problem URL in your reply so the candidate can read the full problem statement and test cases directly on LeetCode.
+- Keep the presentation clean and concise using this format:
 
-PROBLEM STATEMENT
-[Problem Title & Difficulty]
-[Problem description]
+SELECTED PROBLEM
+[Problem Title] ([Difficulty])
 
 LEETCODE LINK
 https://leetcode.com/problems/[problem-slug]/
 
-EXAMPLE INPUTS & OUTPUTS
-[Examples]
-
-CONSTRAINTS
-[Constraints]
-
 INSTRUCTIONS
-Solve this problem on LeetCode by clicking the LeetCode button/link. Once your solution is Accepted on LeetCode, explain your approach, Time Complexity, and Space Complexity here so we can evaluate your solution.
+This is the question we picked for you! Please open the LeetCode link to read the full problem description and constraints.
+Before writing any code, let's first discuss your thought process, possible approaches (such as brute force vs optimal), and their Time & Space Complexities right here in the chat. Once we discuss and agree on the optimal approach, you can go ahead and code it on LeetCode!
 
-Do not transition to the 'feedback' stage until they have solved the problem and correctly explained their approach and Time/Space complexity."""
+INTERVIEW DISCUSSION FLOW:
+1. First, prompt the candidate to share their approach and their Time & Space Complexities.
+2. Evaluate their explanation, ask probing questions, and give subtle hints if they are stuck or missing edge cases.
+3. Once the candidate explains a solid approach and correct complexities, encourage them to code and submit their solution on LeetCode (they can use the LeetCode button or verify their submission).
+4. Do not transition to the 'feedback' stage until they have thoroughly discussed their approach and complexities, and completed the coding problem."""
         elif interview_type == "sql":
             system_prompt = """You are a strict technical interviewer. You MUST ask an advanced SQL query question using exactly the following template. Do NOT use markdown (* or #). Use exactly these headings:
 

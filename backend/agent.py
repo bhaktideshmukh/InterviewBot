@@ -60,14 +60,14 @@ def interviewer_node(state: InterviewState, config: RunnableConfig):
     if interview_type == "dsa" and not dsa_problem:
         dsa_problem = get_random_grind75_problem()
 
-    # High-quota primary model (1,500 RPD) with automatic failover fallback
+    # Primary model (recommended by Google API) with automatic failover fallback
     llm_primary = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model="gemini-3.8-flash",
         google_api_key=api_key,
         max_retries=2
     )
     llm_fallback = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-3.6-flash",
         google_api_key=api_key,
         max_retries=2
     )
